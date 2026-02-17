@@ -1,6 +1,6 @@
 # Beyond Vibes
 
-The intent of this is to evaluate local models and establish a benchmark to compare them in latency and quality across various tasks. Of course, this can also be used to test other model api vendors, but the focus is local models with unique requirements.
+This project provides a framework to evaluate local models and compare them in latency and quality across various tasks. Of course, this can also be used to test model api vendors, but the focus is local models with unique requirements.
 
 
 ## Use cases
