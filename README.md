@@ -1,6 +1,6 @@
 # Beyond Vibes
 
-This project provides a framework to evaluate local models and compare them in latency, and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
+This project provides a framework to evaluate local models and compare them in latency and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
 
 ## Archetypes
 
@@ -15,19 +15,17 @@ Our use cases naturally fall into four 'archetypes'. These represent the categor
 
 ## Methodology
 
-We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define a "Golden Trajectory"—a set of instructions with a known, optimal outcome (e.g., a passing test suite or a verified architectural decision).
+We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define clear success criteria (e.g., a passing test suite, a verified architectural decision).
 
 ### Stratification (The "Local" Variables)
 
 Unlike API-based benchmarks, local inference is highly sensitive to runtime configuration. We stratify simulations across:
 
 *   **Engine Config**: `llama.cpp` container variants (ROCm, Vulkan, CUDA) and CLI args (batch size, threads, kv-cache type).
-*   **Model Weights**: Different HuggingFace model families (GLM, Qwen, Mistral).
+*   **Base Models**: Different HuggingFace model families (GLM, Qwen, Mistral).
 *   **Quantization**: Impact of precision loss (Q4_K_M vs Q8_0 vs FP16) on reasoning capabilities.
 
 ### Simulations
-
-To create our **Golden Dataset**, we first execute tasks manually with a Human-in-the-Loop (HITL) approach using a high-intelligence model (e.g., Claude 4.5 Opus, Kimi K2.5). Once a clean execution path is verified, we replay these tasks autonomously using **OpenCode** against our local models.
 
 **Current Simulation Tasks:**
 
@@ -52,7 +50,7 @@ To create our **Golden Dataset**, we first execute tasks manually with a Human-i
 
 ### Evals
 
-We leverage **DSPy** to compile and optimize "LLM Judges." By using our Golden Dataset as a training set, we optimize the judge's prompts to ensure they align with human expert preference before running them at scale.
+We leverage **DSPy** to compile LLM Judges that score outputs against quality rubrics.
 
 The evaluation framework has two tiers:
 
@@ -82,7 +80,7 @@ The evaluation framework has two tiers:
 *   **B. Repo Maintenance (The "Janitor" Judge)**
     *   **Determinisim:** Binary Pass/Fail on `uv sync`, `pytest`, or build commands.
     *   **Diff Hygiene:** Penalties for modifying unrelated files or formatting changes.
-    *   **Idempotency:** Consistency of output across multiple runs.
+    *   **Reproducibility:** Consistency of output across multiple runs.
 
 *   **C. Feature Implementation (The "Engineer" Judge)**
     *   **Idiomatic Check:** Code style alignment (logger usage, error patterns).
