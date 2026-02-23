@@ -45,7 +45,7 @@ ignore = ["D203", "D213"]
 
 
 [tool.pytest.ini_options]
-adopts = "-s"
+addopts = "-s"
 testpaths = ["tests"]
 
 [tool.coverage] # Coverage config
