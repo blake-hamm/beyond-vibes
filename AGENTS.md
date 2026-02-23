@@ -6,8 +6,10 @@ Model evaluation benchmark for local agentic coding models.
 uv sync                         # Install deps
 uv run pytest                   # Run tests
 uv run pytest tests/test_x.py   # Single file
-uv run ruff check --fix . && uv run ruff format .  # Lint+format
-uv run mypy src/                # Type check
+
+# Lint + format (use nix develop on NixOS):
+nix develop -c ruff check --fix . && nix develop -c ruff format .
+nix develop -c mypy src/        # Type check
 
 ## Project Layout
 src/evaluators/   # LLM judge logic (DSPy-based)
