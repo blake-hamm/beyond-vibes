@@ -8,7 +8,18 @@ authors = [
 ]
 license = {text = "BSD license"}
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "typer",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "pyyaml",
+  "boto3",
+  "huggingface-hub",
+  "python-dotenv",
+]
+
+[project.scripts]
+beyond-vibes = "beyond_vibes.cli:app"
 
 [project.optional-dependencies]
 dev = [
