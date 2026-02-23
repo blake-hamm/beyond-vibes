@@ -17,13 +17,10 @@ DEFAULT_CONFIG = "models.yaml"
 
 @app.command()
 def download(
-    config_path: Path | None = None,
+    config_path: Path | None = Path(DEFAULT_CONFIG),
     dry_run: bool = False,
 ) -> None:
     """Download models from HuggingFace to S3."""
-    if config_path is None:
-        config_path = Path(DEFAULT_CONFIG)
-
     config_data = yaml.safe_load(config_path.read_text())
     config = Config(**config_data)
 
