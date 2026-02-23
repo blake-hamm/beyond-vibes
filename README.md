@@ -1,5 +1,7 @@
 # Beyond Vibes
 
+*LLM evaluation framework for testing self-hosted, open source models running on llama.cpp.*
+
 This project provides a framework to evaluate local models and compare them in latency and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
 
 ## Archetypes
@@ -90,3 +92,55 @@ The evaluation framework has two tiers:
     *   **Citation Grounding:** Verification that compared features actually exist.
     *   **Decisiveness:** Did it provide a clear recommendation vs. a vague "it depends"?
     *   **Structure:** Adherence to requested formats (e.g., tables, pros/cons lists).
+
+
+#### Helpful commands:
+```bash
+# To get into a nix-based development environment with python and uv
+nix develop
+
+# To create and activate a virtual environment
+uv venv
+source .venv/bin/activate
+
+# To install dependencies
+uv sync --all-extras
+```
+
+## CLI - Model Download
+
+Download models from HuggingFace to S3.
+
+### Prerequisites
+
+- S3 bucket must exist before running
+- Valid HuggingFace model repo
+
+### Setup
+
+1. **Create `.env` file:**
+```bash
+S3_BUCKET=your-bucket
+S3_ENDPOINT=https://s3.example.com
+S3_ACCESS_KEY=your-access-key
+S3_SECRET_KEY=your-secret-key
+```
+
+2. **Create `models.yaml` config:**
+```yaml
+bucket: your-bucket
+models:
+  - name: model-name
+    repo_id: namespace/model-repo
+    quant_tags: ["Q4_K_M", "Q8_0"]
+```
+
+### Run
+
+```bash
+# Dry run (preview only)
+uv run beyond-vibes download --config-path models.yaml --dry-run
+
+# Actual download
+uv run beyond-vibes download
+```

@@ -6,8 +6,10 @@ Model evaluation benchmark for local agentic coding models.
 uv sync                         # Install deps
 uv run pytest                   # Run tests
 uv run pytest tests/test_x.py   # Single file
-uv run ruff check --fix . && uv run ruff format .  # Lint+format
-uv run mypy src/                # Type check
+
+# Lint + format (use nix develop on NixOS):
+nix develop -c ruff check --fix . && nix develop -c ruff format .
+nix develop -c mypy src/        # Type check
 
 ## Project Layout
 src/evaluators/   # LLM judge logic (DSPy-based)
@@ -27,3 +29,37 @@ tests/
 - Feature branches: `feature/description`
 - Never commit: `.env`, `data/`, `__pycache__/`
 - Run tests + ruff before pushing
+
+## Engineering Philosophy
+*Follow the zen of python as much as possible:*
+Beautiful is better than ugly.
+Explicit is better than implicit.
+Simple is better than complex.
+Complex is better than complicated.
+Flat is better than nested.
+Sparse is better than dense.
+Readability counts.
+Special cases aren't special enough to break the rules.
+Although practicality beats purity.
+Errors should never pass silently.
+Unless explicitly silenced.
+In the face of ambiguity, refuse the temptation to guess.
+There should be one-- and preferably only one --obvious way to do it.
+Although that way may not be obvious at first unless you're Dutch.
+Now is better than never.
+Although never is often better than *right* now.
+If the implementation is hard to explain, it's a bad idea.
+If the implementation is easy to explain, it may be a good idea.
+Namespaces are one honking great idea -- let's do more of those!
+
+### TDD Workflow (Optional)
+
+When making code changes in `src/`, prefer Test Driven Development:
+
+1. **Red** — Write a failing test first, run it to confirm failure
+2. **Green** — Get human approval, then write minimal code to pass
+3. **Blue** — Refactor as needed
+
+**When to skip TDD:** Prototypes, exploratory refactors, research tasks, docs, quick fixes, or any non-`src/` changes.
+
+**Approval checkpoint:** Before any implementation code in `src/`, get human approval.
