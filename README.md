@@ -139,8 +139,8 @@ models:
 
 ```bash
 # Dry run (preview only)
-uv run beyond-vibes --config-path models.yaml --dry-run
+uv run beyond-vibes download --config-path models.yaml --dry-run
 
 # Actual download
-uv run beyond-vibes
+uv run beyond-vibes download
 ```

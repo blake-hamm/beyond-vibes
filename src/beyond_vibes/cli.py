@@ -1,5 +1,6 @@
 """CLI for downloading models from HuggingFace to S3."""
 
+import logging
 from pathlib import Path
 
 import typer
@@ -7,12 +8,22 @@ import yaml
 
 from beyond_vibes.config import Config
 from beyond_vibes.hf import HFClient
-from beyond_vibes.logger import logger
 from beyond_vibes.s3 import S3Client
-from beyond_vibes.settings import S3Settings
+from beyond_vibes.settings import settings
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer()
 DEFAULT_CONFIG = "models.yaml"
+
+
+@app.callback()
+def main(
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+) -> None:
+    """CLI entry point with optional debug flag."""
+    if debug:
+        logging.getLogger("beyond_vibes").setLevel(logging.DEBUG)
 
 
 @app.command()
@@ -24,9 +35,8 @@ def download(
     config_data = yaml.safe_load(config_path.read_text())
     config = Config(**config_data)
 
-    s3_settings = S3Settings()  # type: ignore[call-arg]
-    s3_client = S3Client(s3_settings)
-    hf_client = HFClient()
+    s3_client = S3Client()
+    hf_client = HFClient(token=settings.hf_token)
 
     for model in config.models:
         logger.info(f"Processing {model.name}...")
@@ -46,7 +56,7 @@ def download(
 
             if dry_run:
                 logger.info(
-                    f"  [DRY RUN] Would upload to s3://{s3_settings.bucket}/{s3_key}"
+                    f"  [DRY RUN] Would upload to s3://{settings.s3_bucket}/{s3_key}"
                 )
             else:
                 try:
@@ -63,7 +73,9 @@ def download(
                     logger.error(f"Failed to upload {f}: {e}")
                     raise typer.Exit(code=1) from e
 
-                logger.info(f"  Uploaded {f}")
+                logger.info(
+                    f"  Successfully downloaded {f} and uploaded to s3 {s3_key}"
+                )
 
     logger.info("Done!")
 

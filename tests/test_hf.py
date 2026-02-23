@@ -114,7 +114,7 @@ def test_download_file(hf_client: HFClient) -> None:
         result = hf_client.download_file("test/repo", "main", "model.bin")
 
         mock_download.assert_called_once_with(
-            repo_id="test/repo", revision="main", filename="model.bin"
+            repo_id="test/repo", revision="main", filename="model.bin", token=None
         )
         assert result == Path("/tmp/downloaded/model.bin")
 
@@ -127,5 +127,5 @@ def test_download_file_custom_revision(hf_client: HFClient) -> None:
         hf_client.download_file("test/repo", "v2.0", "model.bin")
 
         mock_download.assert_called_once_with(
-            repo_id="test/repo", revision="v2.0", filename="model.bin"
+            repo_id="test/repo", revision="v2.0", filename="model.bin", token=None
         )

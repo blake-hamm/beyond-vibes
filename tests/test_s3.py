@@ -6,29 +6,31 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from beyond_vibes.s3 import S3Client
-from beyond_vibes.settings import S3Settings
 
 
 @pytest.fixture
-def mock_settings() -> S3Settings:
-    """Create mock S3 settings."""
-    return S3Settings(
-        bucket="test-bucket",
-        endpoint="https://s3.example.com",
-        access_key="test-access-key",
-        secret_key="test-secret-key",
-    )
-
-
-@pytest.fixture
-def s3_client(mock_settings: S3Settings) -> S3Client:
-    """Create S3Client with mocked Minio."""
-    with patch("beyond_vibes.s3.Minio") as mock_minio:
-        mock_client = MagicMock()
-        mock_minio.return_value = mock_client
-        client = S3Client(mock_settings)
-        client._client = mock_client
-        return client
+def s3_client() -> S3Client:
+    """Create S3Client with mocked Minio and settings."""
+    with patch.dict(
+        "os.environ",
+        {
+            "S3_BUCKET": "test-bucket",
+            "S3_ENDPOINT": "https://s3.example.com",
+            "S3_ACCESS_KEY": "test-access-key",
+            "S3_SECRET_KEY": "test-secret-key",
+        },
+    ):
+        with patch("beyond_vibes.s3.Minio") as mock_minio:
+            mock_client = MagicMock()
+            mock_minio.return_value = mock_client
+            with patch("beyond_vibes.s3.settings") as mock_settings:
+                mock_settings.s3_bucket = "test-bucket"
+                mock_settings.s3_endpoint = "https://s3.example.com"
+                mock_settings.s3_access_key = "test-access-key"
+                mock_settings.s3_secret_key = "test-secret-key"
+                client = S3Client()
+                client._client = mock_client
+                return client
 
 
 def test_upload_file(s3_client: S3Client) -> None:

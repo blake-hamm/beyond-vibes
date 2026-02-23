@@ -5,20 +5,20 @@ from pathlib import Path
 
 from minio import Minio
 
-from beyond_vibes.settings import S3Settings
+from beyond_vibes.settings import settings
 
 
 class S3Client:
     """Client for uploading files to S3-compatible storage."""
 
-    def __init__(self, settings: S3Settings) -> None:
+    def __init__(self) -> None:
         """Initialize the S3 client."""
         self._client = Minio(
-            settings.endpoint,
-            access_key=settings.access_key,
-            secret_key=settings.secret_key,
+            settings.s3_endpoint,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
         )
-        self._bucket = settings.bucket
+        self._bucket = settings.s3_bucket
 
     def upload_file(self, local_path: Path, key: str) -> None:
         """Upload a local file to S3."""

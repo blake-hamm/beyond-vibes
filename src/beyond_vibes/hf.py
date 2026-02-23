@@ -10,9 +10,10 @@ from beyond_vibes.config import ESSENTIAL_MODEL_CONFIGS
 class HFClient:
     """Client for interacting with HuggingFace Hub."""
 
-    def __init__(self) -> None:
+    def __init__(self, token: str | None = None) -> None:
         """Initialize the HF client."""
-        self._api = HfApi()
+        self._api = HfApi(token=token)
+        self._token = token
 
     def list_files(self, repo_id: str, revision: str = "main") -> list[str]:
         """List all files in a repository."""
@@ -32,5 +33,10 @@ class HFClient:
     def download_file(self, repo_id: str, revision: str, filename: str) -> Path:
         """Download a single file from the repository."""
         return Path(
-            hf_hub_download(repo_id=repo_id, revision=revision, filename=filename)
+            hf_hub_download(
+                repo_id=repo_id,
+                revision=revision,
+                filename=filename,
+                token=self._token,
+            )
         )

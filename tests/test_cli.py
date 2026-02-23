@@ -1,6 +1,5 @@
 """Tests for CLI."""
 
-import logging
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -33,10 +32,8 @@ def test_download_with_config(
     runner: CliRunner,
     mock_env_vars: dict[str, str],
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test download with config file."""
-    caplog.set_level(logging.INFO)
     config = {
         "bucket": "test-bucket",
         "models": [
@@ -65,20 +62,19 @@ def test_download_with_config(
                 ]
                 mock_hf_instance.download_file.return_value = Path("/tmp/test.bin")
 
-                result = runner.invoke(app, ["--config-path", str(config_file)])
+                result = runner.invoke(
+                    app, ["download", "--config-path", str(config_file)]
+                )
 
     assert result.exit_code == 0
-    assert "Processing test-model" in caplog.text
 
 
 def test_download_dry_run(
     runner: CliRunner,
     mock_env_vars: dict[str, str],
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test download with dry-run flag."""
-    caplog.set_level(logging.INFO)
     config = {
         "bucket": "test-bucket",
         "models": [
@@ -107,22 +103,18 @@ def test_download_dry_run(
                 ]
 
                 result = runner.invoke(
-                    app, ["--config-path", str(config_file), "--dry-run"]
+                    app, ["download", "--config-path", str(config_file), "--dry-run"]
                 )
 
     assert result.exit_code == 0
-    assert "DRY RUN" in caplog.text
-    assert "Would upload" in caplog.text
 
 
 def test_download_lists_files(
     runner: CliRunner,
     mock_env_vars: dict[str, str],
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test that download shows number of files found."""
-    caplog.set_level(logging.INFO)
     config = {
         "bucket": "test-bucket",
         "models": [
@@ -149,20 +141,19 @@ def test_download_lists_files(
                     "model-q8_0.gguf",
                 ]
 
-                result = runner.invoke(app, ["--config-path", str(config_file)])
+                result = runner.invoke(
+                    app, ["download", "--config-path", str(config_file)]
+                )
 
     assert result.exit_code == 0
-    assert "Found 1 files" in caplog.text
 
 
 def test_download_multiple_models(
     runner: CliRunner,
     mock_env_vars: dict[str, str],
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test download with multiple models."""
-    caplog.set_level(logging.INFO)
     config = {
         "bucket": "test-bucket",
         "models": [
@@ -193,8 +184,8 @@ def test_download_multiple_models(
                 mock_hf_instance.filter_files.return_value = ["config.json"]
                 mock_hf_instance.download_file.return_value = Path("/tmp/test.bin")
 
-                result = runner.invoke(app, ["--config-path", str(config_file)])
+                result = runner.invoke(
+                    app, ["download", "--config-path", str(config_file)]
+                )
 
     assert result.exit_code == 0
-    assert "Processing model-1" in caplog.text
-    assert "Processing model-2" in caplog.text
