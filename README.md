@@ -106,3 +106,41 @@ source .venv/bin/activate
 # To install dependencies
 uv sync --all-extras
 ```
+
+## CLI - Model Download
+
+Download models from HuggingFace to S3.
+
+### Prerequisites
+
+- S3 bucket must exist before running
+- Valid HuggingFace model repo
+
+### Setup
+
+1. **Create `.env` file:**
+```bash
+S3_BUCKET=your-bucket
+S3_ENDPOINT=https://s3.example.com
+S3_ACCESS_KEY=your-access-key
+S3_SECRET_KEY=your-secret-key
+```
+
+2. **Create `models.yaml` config:**
+```yaml
+bucket: your-bucket
+models:
+  - name: model-name
+    repo_id: namespace/model-repo
+    quant_tags: ["Q4_K_M", "Q8_0"]
+```
+
+### Run
+
+```bash
+# Dry run (preview only)
+uv run beyond-vibes --config-path models.yaml --dry-run
+
+# Actual download
+uv run beyond-vibes
+```
