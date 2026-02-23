@@ -51,3 +51,15 @@ Although never is often better than *right* now.
 If the implementation is hard to explain, it's a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea -- let's do more of those!
+
+### TDD Workflow (Optional)
+
+When making code changes in `src/`, prefer Test Driven Development:
+
+1. **Red** — Write a failing test first, run it to confirm failure
+2. **Green** — Get human approval, then write minimal code to pass
+3. **Blue** — Refactor as needed
+
+**When to skip TDD:** Prototypes, exploratory refactors, research tasks, docs, quick fixes, or any non-`src/` changes.
+
+**Approval checkpoint:** Before any implementation code in `src/`, get human approval.
