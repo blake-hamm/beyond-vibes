@@ -1,0 +1,29 @@
+repos:
+- repo: local
+  hooks:
+    - id: ruff
+      name: ruff
+      entry: ruff check --force-exclude
+      language: system
+      types_or: [python, pyi, jupyter]
+    - id: ruff-format
+      name: ruff-format
+      entry: ruff format
+      language: system
+      types_or: [python, pyi, jupyter]
+- repo: local
+  hooks:
+    - id: run-coverage
+      name: Run Coverage
+      entry: .venv/bin/python -m coverage run
+      language: system
+      pass_filenames: false  # Prevent passing filenames as arguments
+      stages: [pre-commit]
+- repo: local
+  hooks:
+    - id: report-coverage
+      name: Report Coverage
+      entry: .venv/bin/python -m coverage report
+      language: system
+      pass_filenames: false  # Prevent passing filenames as arguments
+      stages: [pre-commit]
