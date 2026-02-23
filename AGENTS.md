@@ -17,9 +17,10 @@ data/             # Golden datasets (gitignored)
 tests/
 
 ## Key Concepts
+- **Archetypes**: Four task categories — Architectural Planning, Repo Maintenance, Feature Implementation, Comparative Research
 - **Golden dataset**: Human-validated input/output pairs in `data/golden/`
 - **LLM judge**: DSPy-optimized multi-metric scorer in `src/evaluators/`
-- **Metrics**: Compare (logic/idiom), Tools (deterministic/eventual), Vibe (sycophancy/directness)
+- **Metrics**: Universal (applies to all) + Category-specific (per-archetype)
 - **Tasks**: Defined in `configs/tasks/`, run via OpenCode
 
 ## Git Rules
