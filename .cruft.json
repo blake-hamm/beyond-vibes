@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/blake-hamm/boilerplates/",
-  "commit": "5d968a95a7cfb80f2cfba5e03a228858ea6d3a85",
+  "commit": "0a489475634f79c8d643b857b8618b9b738fc483",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -11,7 +11,7 @@
       "project_short_description": "LLM evaluation framework for testing self-hosted, open source models running on llama.cpp.",
       "open_source_license": "BSD license",
       "_template": "https://github.com/blake-hamm/boilerplates/",
-      "_commit": "5d968a95a7cfb80f2cfba5e03a228858ea6d3a85"
+      "_commit": "0a489475634f79c8d643b857b8618b9b738fc483"
     }
   },
   "directory": "python"
