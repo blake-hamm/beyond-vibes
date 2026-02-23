@@ -1,93 +1,94 @@
 # Beyond Vibes
 
-This project provides a framework to evaluate local models and compare them in latency and quality across various tasks. Of course, this can also be used to test model api vendors, but the focus is local models with unique requirements.
-
+This project provides a framework to evaluate local models and compare them in latency, and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
 
 ## Archetypes
 
-Our use cases naturally into four 'archetypes'. These represent the categories of tasks we would leverage local models for. These categories are also going to be the primary focus of our qualitative evals.
+Our use cases naturally fall into four 'archetypes'. These represent the categories of tasks we leverage local models for, serving as the primary lenses for our qualitative evals.
 
 | Archetype | Description | Primary Goal | Examples |
-|-|-|-|-|
-| Architectural Planning | High-level design & research | Feasibility & Clarity | Auth plan for lighthearted, Protein folding plan, Rook Ceph migration |
-| Repo Maintenance | Refactoring & chores | Stability & Cleanliness | Poetry to uv, Add tests to kube-ai-stack, Orphan script tests |
-| Feature Implementation | New functionality code | Correctness & Integration | Lidarr/Readarr implementation, nvim with nvf |
-| Comparative Research | Vendor/Tool Analysis | Accuracy & Decision Support | LiteLLM vs Kong, Observability tools comparison |
+| :--- | :--- | :--- | :--- |
+| **Architectural Planning** | High-level design & research | Feasibility & Clarity | Auth plan, Protein folding architecture |
+| **Repo Maintenance** | Refactoring & chores | Stability & Cleanliness | Migrating to `uv`, adding unit tests |
+| **Feature Implementation** | New functionality code | Correctness & Integration | Implementing Lidarr/Readarr, nvim config |
+| **Comparative Research** | Vendor/Tool Analysis | Accuracy & Decision Support | LiteLLM vs Kong, Observability comparisons |
 
 ## Methodology
 
-In order to test these use cases, we plan a 'scientific' methodology. First off, we setup our experiment by targeting specific repos and a task for each use case. We use OpenCode and provide instructions with a desired outcome in mind. This establishes a 'golden dataset' with pre-defined inputs and desired outputs.
+We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define a "Golden Trajectory"—a set of instructions with a known, optimal outcome (e.g., a passing test suite or a verified architectural decision).
 
-### Stratification
+### Stratification (The "Local" Variables)
 
-Each simulation is run across multiple configurations to understand how different factors affect model performance. This stratification covers:
+Unlike API-based benchmarks, local inference is highly sensitive to runtime configuration. We stratify simulations across:
 
-- **Backend**: llama.cpp container images (ROCm, Vulkan, etc.)
-- **Server Args**: Various server configurations (kv quant, batch size)
-- **Models**: Different HuggingFace models
-- **Quantizations**: Different quantization levels for each model
+*   **Engine Config**: `llama.cpp` container variants (ROCm, Vulkan, CUDA) and CLI args (batch size, threads, kv-cache type).
+*   **Model Weights**: Different HuggingFace model families (GLM, Qwen, Mistral).
+*   **Quantization**: Impact of precision loss (Q4_K_M vs Q8_0 vs FP16) on reasoning capabilities.
 
 ### Simulations
 
-To form the golden outputs, we manually walk through the tasks (inputs) with a human-in-the-loop and a more powerful model like Opus 4.6. Once we are satisfied with the desired outcome of our tasks after some hand-holding, we ensure the same tasks can be executed autonomously using OpenCode. Here are the tasks we execute:
+To create our **Golden Dataset**, we first execute tasks manually with a Human-in-the-Loop (HITL) approach using a high-intelligence model (e.g., Claude 4.5 Opus, Kimi K2.5). Once a clean execution path is verified, we replay these tasks autonomously using **OpenCode** against our local models.
 
-- Write unit tests for [lighthearted](https://github.com/blake-hamm/lighthearted)
-- Switch from poetry to uv for [lighthearted](https://github.com/blake-hamm/lighthearted)
-- Research and architect a login/auth plan for for [lighthearted](https://github.com/blake-hamm/lighthearted)
-- Research and compare the current implementation of ceph and usage of the csi plugin to using rook ceph in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
-- Setup unit tests for ceph orphan python script in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
-- Implement Lidarr and Redarr in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
-- Implement nvim with nvf in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
-- Create a high level architecture and plan to enable overnight protein folding in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
-- Setup tests in [kube-ai-stack](https://github.com/blake-hamm/kube-ai-stack)
-- Compare LiteLLM and Kong AI Gateway and provide a recommendation
-- Compare Arize Phoenix, MLflow and LangFuse for GenAI observability and experimentation
+**Current Simulation Tasks:**
 
+*   **Architectural Planning**
+    *   Research and architect a login/auth plan for [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Create a high-level architecture/plan for overnight protein folding in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+    *   Migration plan: Ceph CSI vs. Rook Ceph in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+
+*   **Repo Maintenance**
+    *   Switch from poetry to `uv` for [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Setup tests in [kube-ai-stack](https://github.com/blake-hamm/kube-ai-stack)
+    *   Write unit tests for [lighthearted](https://github.com/blake-hamm/lighthearted)
+
+*   **Feature Implementation**
+    *   Create FastAPI endpoints and decouple from fronted in [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Implement Lidarr and Readarr in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+    *   Implement nvim with nvf in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+
+*   **Comparative Research**
+    *   Compare LiteLLM and Kong AI Gateway and provide a recommendation
+    *   Compare Arize Phoenix, MLflow, and LangFuse for GenAI observability
 
 ### Evals
 
-Now that we have our dataset, we will need a way to evaluate different outcomes. To do this, we use DSPy and create an LLM judge. We can use the golden dataset to optimize the prompt for this judge to ensure it correctly judges our outcomes.
+We leverage **DSPy** to compile and optimize "LLM Judges." By using our Golden Dataset as a training set, we optimize the judge's prompts to ensure they align with human expert preference before running them at scale.
 
-The evaluation framework has two tiers: **Universal Evals** (apply to all archetypes) and **Category-Specific Evals** (tailored to each archetype).
+The evaluation framework has two tiers:
 
-#### Universal Evals
+#### 1. Universal Evals
+*Baseline health metrics applied to every run regardless of archetype.*
 
-These are baseline health metrics. Every run is scored on these regardless of task type.
+*   **Instruction Adherence (The "Vibe" Check)**
+    *   **Sycophancy Score (1-5):** Did the model apologize excessively or agree with a bad premise?
+    *   **Refusal Rate:** Did it falsely refuse a safe coding task?
+    *   **Efficiency:** Total turns/steps to solve (crucial for slow local inference).
+*   **Tool Use Quality**
+    *   **Hallucination Rate:** Frequency of non-existent tool calls.
+    *   **Schema Adherence:** Frequency of JSON formatting errors.
+    *   **Loop Detection:** Did the agent get stuck in a read/list loop?
+*   **System Performance**
+    *   **Throughput:** Tokens Per Second (TPS) generation.
+    *   **Latency:** Time to First Token (TTFT) and Prompt Processing.
+    *   **Resource Cost:** Peak VRAM usage and model load time.
 
-**Instruction Adherence (The "Vibe" Check):**
-- Sycophancy Score (1-5): Did the model apologize excessively or agree with a bad premise?
-- Refusal Rate: Did it falsely refuse a safe coding task?
-- Efficiency: Number of turns/steps to solve (crucial for local models where inference is slow/expensive)
+#### 2. Category-Specific Evals
 
-**Tool Use Quality:**
-- Hallucinated Tool Calls: Did it try to call a tool that doesn't exist?
-- Argument Formatting: How often did it fail JSON schema validation for tool arguments?
-- Loop Detection: Did it get stuck calling ls or read_file on the same file 3+ times?
+*   **A. Architectural Planning (The "Design" Judge)**
+    *   **Specificity:** Does the plan cite specific files/APIs, or generic concepts?
+    *   **Security:** Checks for hardcoded secrets or insecure defaults.
+    *   **Constraints:** Adherence to "local-only" or "no-cost" requirements.
 
-**Performance Metrics:**
-- Time to First Token (TTFT): How quickly did generation start?
-- Prompt Processing Speed: Time to process the input prompt
-- Tokens Per Second (TPS): Generation throughput
-- Total Completion Time: Start to finish for entire task
-- Model Load Time: Time to load model into memory (relevant for zero-scale architectures)
+*   **B. Repo Maintenance (The "Janitor" Judge)**
+    *   **Determinisim:** Binary Pass/Fail on `uv sync`, `pytest`, or build commands.
+    *   **Diff Hygiene:** Penalties for modifying unrelated files or formatting changes.
+    *   **Idempotency:** Consistency of output across multiple runs.
 
-#### Category-Specific Evals
+*   **C. Feature Implementation (The "Engineer" Judge)**
+    *   **Idiomatic Check:** Code style alignment (logger usage, error patterns).
+    *   **Completeness:** Implementation of all functional requirements (not just the "happy path").
 
-**A. Architectural Planning (The "Design" Judge)**
-- Specificity Score: Does the plan mention specific filenames, libraries, or API endpoints?
-- Security Check: Does the plan suggest insecure defaults (e.g., storing secrets in plain text)?
-- Constraint Satisfaction: Did it respect constraints like "local-only" or "no paid APIs"?
-
-**B. Repo Maintenance (The "Janitor" Judge)**
-- Deterministic - Build/Test Pass: Did `uv sync` or `pytest` pass after the change? (Binary 0/1)
-- Diff Hygiene: Did it change unrelated files?
-- Idempotency: If you run the maintenance task twice, does it result in the same state?
-
-**C. Feature Implementation (The "Engineer" Judge)**
-- Idiomatic Check: Does the new code match existing style (logger, error handling patterns)?
-- Implementation Completeness: Did it implement all requirements?
-
-**D. Comparative Research (The "Analyst" Judge)**
-- Citation Grounding: Are the features it compares actually real?
-- Decisiveness: Did it make a recommendation as requested, or just say "it depends"?
-- Structure: Did it follow the requested format (e.g., "Pros/Cons table")?
+*   **D. Comparative Research (The "Analyst" Judge)**
+    *   **Citation Grounding:** Verification that compared features actually exist.
+    *   **Decisiveness:** Did it provide a clear recommendation vs. a vague "it depends"?
+    *   **Structure:** Adherence to requested formats (e.g., tables, pros/cons lists).
