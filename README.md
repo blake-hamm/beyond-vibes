@@ -1,33 +1,92 @@
 # Beyond Vibes
 
-This project provides a framework to evaluate local models and compare them in latency and quality across various tasks. Of course, this can also be used to test model api vendors, but the focus is local models with unique requirements.
+This project provides a framework to evaluate local models and compare them in latency and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
 
+## Archetypes
 
-## Use cases
+Our use cases naturally fall into four 'archetypes'. These represent the categories of tasks we leverage local models for, serving as the primary lenses for our qualitative evals.
 
-The primary use cases for local models are agentic coding and chat/search capabilities. We will setup tests in [OpenCode](https://opencode.ai/docs/) that evaluate:
-
-- Architecture and planning
-- Unit test creation
-- New feature creation
-- Vendor research and searching
+| Archetype | Description | Primary Goal | Examples |
+| :--- | :--- | :--- | :--- |
+| **Architectural Planning** | High-level design & research | Feasibility & Clarity | Auth plan, Protein folding architecture |
+| **Repo Maintenance** | Refactoring & chores | Stability & Cleanliness | Migrating to `uv`, adding unit tests |
+| **Feature Implementation** | New functionality code | Correctness & Integration | Implementing Lidarr/Readarr, nvim config |
+| **Comparative Research** | Vendor/Tool Analysis | Accuracy & Decision Support | LiteLLM vs Kong, Observability comparisons |
 
 ## Methodology
 
-In order to test these use cases, we plan a 'scientific' methodology. First off, we setup our experiment by targeting specific repos and a task for each use case. We use OpenCode and provide instructions with a desired outcome in mind. This establishes a 'golden dataset' with pre-defined inputs and desired outputs.
+We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define clear success criteria (e.g., a passing test suite, a verified architectural decision).
 
-To form the golden outputs, we manually walk through the tasks (inputs) with a human-in-the-loop and a more powerful model like Opus 4.6. Once we are satisfied with the desired outcome of our tasks after some hand-holding, we ensure the same tasks can be executed autonomously using OpenCode.
+### Stratification (The "Local" Variables)
 
-Now that we have our dataset, we will need a way to evaluate different outcomes. To do this, we use DSPy and create an LLM judge. We can use the golden dataset to optimize the prompt for this judge to ensure it correctly judges our outcomes. The final score is a collection of smaller judges that creates the following datapoints:
+Unlike API-based benchmarks, local inference is highly sensitive to runtime configuration. We stratify simulations across:
 
-- Compare
-  - Does the output or code execute the same logic?
-  - Were there any aspects of the solution or steps along the way that totally missed?
-  - If logic is correct, how "idiomatic" or "clean" is it compared to the Golden solution
-- Tools
-  - Deterministic - percent of successful tool calls?
-  - Eventually, were tool calls completed successfully?
-- Vibe
-  - On a scale of 1-5, how sycophantic was the response?
-  - Was there some extreme hallucinations made that aren't relevant or factually true at all?
-  - Was the response direct and solved the problem swiftly without extra steps?
+*   **Engine Config**: `llama.cpp` container variants (ROCm, Vulkan, CUDA) and CLI args (batch size, threads, kv-cache type).
+*   **Base Models**: Different HuggingFace model families (GLM, Qwen, Mistral).
+*   **Quantization**: Impact of precision loss (Q4_K_M vs Q8_0 vs FP16) on reasoning capabilities.
+
+### Simulations
+
+**Current Simulation Tasks:**
+
+*   **Architectural Planning**
+    *   Research and architect a login/auth plan for [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Create a high-level architecture/plan for overnight protein folding in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+    *   Migration plan: Ceph CSI vs. Rook Ceph in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+
+*   **Repo Maintenance**
+    *   Switch from poetry to `uv` for [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Setup tests in [kube-ai-stack](https://github.com/blake-hamm/kube-ai-stack)
+    *   Write unit tests for [lighthearted](https://github.com/blake-hamm/lighthearted)
+
+*   **Feature Implementation**
+    *   Create FastAPI endpoints and decouple from fronted in [lighthearted](https://github.com/blake-hamm/lighthearted)
+    *   Implement Lidarr and Readarr in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+    *   Implement nvim with nvf in [bhamm-lab](https://github.com/blake-hamm/bhamm-lab)
+
+*   **Comparative Research**
+    *   Compare LiteLLM and Kong AI Gateway and provide a recommendation
+    *   Compare Arize Phoenix, MLflow, and LangFuse for GenAI observability
+
+### Evals
+
+We leverage **DSPy** to compile LLM Judges that score outputs against quality rubrics.
+
+The evaluation framework has two tiers:
+
+#### 1. Universal Evals
+*Baseline health metrics applied to every run regardless of archetype.*
+
+*   **Instruction Adherence (The "Vibe" Check)**
+    *   **Sycophancy Score (1-5):** Did the model apologize excessively or agree with a bad premise?
+    *   **Refusal Rate:** Did it falsely refuse a safe coding task?
+    *   **Efficiency:** Total turns/steps to solve (crucial for slow local inference).
+*   **Tool Use Quality**
+    *   **Hallucination Rate:** Frequency of non-existent tool calls.
+    *   **Schema Adherence:** Frequency of JSON formatting errors.
+    *   **Loop Detection:** Did the agent get stuck in a read/list loop?
+*   **System Performance**
+    *   **Throughput:** Tokens Per Second (TPS) generation.
+    *   **Latency:** Time to First Token (TTFT) and Prompt Processing.
+    *   **Resource Cost:** Peak VRAM usage and model load time.
+
+#### 2. Category-Specific Evals
+
+*   **A. Architectural Planning (The "Design" Judge)**
+    *   **Specificity:** Does the plan cite specific files/APIs, or generic concepts?
+    *   **Security:** Checks for hardcoded secrets or insecure defaults.
+    *   **Constraints:** Adherence to "local-only" or "no-cost" requirements.
+
+*   **B. Repo Maintenance (The "Janitor" Judge)**
+    *   **Determinisim:** Binary Pass/Fail on `uv sync`, `pytest`, or build commands.
+    *   **Diff Hygiene:** Penalties for modifying unrelated files or formatting changes.
+    *   **Reproducibility:** Consistency of output across multiple runs.
+
+*   **C. Feature Implementation (The "Engineer" Judge)**
+    *   **Idiomatic Check:** Code style alignment (logger usage, error patterns).
+    *   **Completeness:** Implementation of all functional requirements (not just the "happy path").
+
+*   **D. Comparative Research (The "Analyst" Judge)**
+    *   **Citation Grounding:** Verification that compared features actually exist.
+    *   **Decisiveness:** Did it provide a clear recommendation vs. a vague "it depends"?
+    *   **Structure:** Adherence to requested formats (e.g., tables, pros/cons lists).
