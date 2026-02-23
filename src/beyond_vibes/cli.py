@@ -27,7 +27,7 @@ def download(
     config_data = yaml.safe_load(config_path.read_text())
     config = Config(**config_data)
 
-    s3_settings = S3Settings()
+    s3_settings = S3Settings()  # type: ignore[call-arg]
     s3_client = S3Client(s3_settings)
     hf_client = HFClient()
 

@@ -41,7 +41,6 @@ Example: `s3://my-models/mistral-7b/TheBloke/Mistral-7B-GGUF/model-q8_0.gguf`
 - `tokenizer.json`
 - `tokenizer_config.json`
 - `generation_config.json`
-- `*.json` (any json file)
 
 ## CLI Usage
 
@@ -55,10 +54,9 @@ beyond-vibes download --dry-run
 
 ```
 S3_BUCKET          # Required
-S3_REGION          # Default: us-east-1
-S3_ENDPOINT        # Optional (S3-compatible)
-AWS_ACCESS_KEY_ID  # Required
-AWS_SECRET_ACCESS_KEY  # Required
+S3_ENDPOINT        # Required (S3-compatible endpoint)
+S3_ACCESS_KEY      # Required
+S3_SECRET_KEY      # Required
 ```
 
 ## Implementation Steps
@@ -68,16 +66,16 @@ AWS_SECRET_ACCESS_KEY  # Required
 - ~~`typer`~~
 - ~~`pydantic`~~
 - ~~`pyyaml`~~
-- ~~`boto3`~~
+- ~~`minio`~~
 - ~~`huggingface-hub`~~
 - ~~`python-dotenv`~~
 
-**COMPLETED** - Added typer, pydantic, pyyaml, boto3, huggingface-hub, python-dotenv to pyproject.toml
+**COMPLETED** - Added typer, pydantic, pyyaml, minio, huggingface-hub, python-dotenv to pyproject.toml
 
 ### Step 2: Create `src/beyond_vibes/settings.py` and `src/beyond_vibes/config.py`
 
 **settings.py** - Project-wide S3 settings:
-- `S3Settings(BaseSettings)` - Loads from env vars (bucket, region, endpoint, access_key, secret_key)
+- `S3Settings(BaseSettings)` - Loads from env vars (bucket, endpoint, access_key, secret_key)
 
 **config.py** - Model/container config:
 - `ModelConfig` - name, repo_id, quant_tags, revision
@@ -85,22 +83,26 @@ AWS_SECRET_ACCESS_KEY  # Required
 
 Also include constant for essential config files to always include:
 ```python
-ESSENTIAL_CONFIGS = {"config.json", "tokenizer.json", "tokenizer_config.json", "generation_config.json"}
+ESSENTIAL_MODEL_CONFIGS = {"config.json", "tokenizer.json", "tokenizer_config.json", "generation_config.json"}
 ```
+
+**COMPLETED**
 
 ### Step 3: Create `src/beyond_vibes/s3.py`
 Implement `S3Client` class:
-- Initialize boto3 client from S3Settings
-- `upload_file(local_path: Path, bucket: str, key: str)` - Upload single file
-- `upload_stream(content: bytes, bucket: str, key: str)` - Upload from memory
-- Handle errors with clear exceptions
+- Initialize Minio client from S3Settings
+- `upload_file(local_path: Path, key: str)` - Upload single file
+- `upload_stream(content: bytes, key: str)` - Upload from memory
+
+**COMPLETED**
 
 ### Step 4: Create `src/beyond_vibes/hf.py`
 Implement `HFClient` class:
 - `list_files(repo_id: str, revision: str)` - List all files in repo
 - `filter_files(files: list[str], quant_tags: list[str])` - Filter by tags + essential configs
 - `download_file(repo_id: str, revision: str, filename: str)` - Download single file to temp
-- Use `huggingface_hub` hf_hub_download or similar
+
+**COMPLETED**
 
 ### Step 5: Create `src/beyond_vibes/cli.py`
 Implement Typer app:
@@ -113,12 +115,16 @@ Implement Typer app:
 - Loop models: list files → filter → download → upload
 - Fail fast on error, print progress
 
+**COMPLETED**
+
 ### Step 6: Update `pyproject.toml`
 Add CLI entry point:
 ```toml
 [project.scripts]
 beyond-vibes = "beyond_vibes.cli:app"
 ```
+
+**COMPLETED**
 
 ### Step 7: Create `tests/test_settings.py` and `tests/test_config.py`
 Test Pydantic validation:
