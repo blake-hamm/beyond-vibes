@@ -34,7 +34,12 @@ def download(
     for model in config.models:
         logger.info(f"Processing {model.name}...")
 
-        files = hf_client.list_files(model.repo_id, model.revision)
+        try:
+            files = hf_client.list_files(model.repo_id, model.revision)
+        except Exception as e:
+            logger.error(f"Failed to list files for {model.name}: {e}")
+            raise typer.Exit(code=1) from e
+
         filtered = hf_client.filter_files(files, model.quant_tags)
 
         logger.info(f"  Found {len(filtered)} files to download")
@@ -47,8 +52,20 @@ def download(
                     f"  [DRY RUN] Would upload to s3://{s3_settings.bucket}/{s3_key}"
                 )
             else:
-                local_path = hf_client.download_file(model.repo_id, model.revision, f)
-                s3_client.upload_file(local_path, s3_key)
+                try:
+                    local_path = hf_client.download_file(
+                        model.repo_id, model.revision, f
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to download {f}: {e}")
+                    raise typer.Exit(code=1) from e
+
+                try:
+                    s3_client.upload_file(local_path, s3_key)
+                except Exception as e:
+                    logger.error(f"Failed to upload {f}: {e}")
+                    raise typer.Exit(code=1) from e
+
                 logger.info(f"  Uploaded {f}")
 
     logger.info("Done!")
