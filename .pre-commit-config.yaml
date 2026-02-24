@@ -15,7 +15,7 @@ repos:
   hooks:
     - id: run-coverage
       name: Run Coverage
-      entry: .venv/bin/python -m pytest --cov --cov-report= --cov-fail-under=80
+      entry: .venv/bin/python -m pytest --cov-fail-under=80
       language: system
       pass_filenames: false
       stages: [pre-commit]
