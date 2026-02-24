@@ -33,32 +33,8 @@ class OpenCodeClient:
         session_id = session_data["id"]
         self._session_id = session_id
 
-        self._init_session(
-            session_id=session_id,
-            model_id=settings.opencode_provider,
-            provider_id=settings.opencode_provider,
-        )
-
         logger.info("Created session %s with working dir: %s", session_id, working_dir)
         return session_id
-
-    def _init_session(
-        self,
-        session_id: str,
-        model_id: str,
-        provider_id: str,
-    ) -> dict:
-        """Initialize a session (analyze the app and create AGENTS.md)."""
-        response = self._client.post(
-            f"/session/{session_id}/init",
-            json={
-                "messageID": "msg_init",
-                "modelID": model_id,
-                "providerID": provider_id,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
 
     def run_prompt(
         self,

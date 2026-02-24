@@ -94,12 +94,11 @@ class SimulationLogger:
 
                 yield self
 
+                self._flush()
+
         except Exception as e:
             logger.error("Failed to start MLflow run: %s", e)
             raise
-
-        finally:
-            self._flush()
 
     # ruff: noqa: PLR0913
     def log_turn(

@@ -1,5 +1,8 @@
 bucket: beyond-vibes
 models:
+  - name: minimax-m2.5-free
+    repo_id: opencode/minimax-m2.5-free
+    quant_tags: []
   - name: qwen3-0.6B
     repo_id: unsloth/Qwen3-0.6B-GGUF
     quant_tags:
