@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from beyond_vibes.hf import HFClient
+from beyond_vibes.model_downloader import HFClient
 
 
 @pytest.fixture
 def hf_client() -> HFClient:
     """Create HFClient with mocked HfApi."""
-    with patch("beyond_vibes.hf.HfApi") as mock_api:
+    with patch("beyond_vibes.model_downloader.hf.HfApi") as mock_api:
         mock_client = MagicMock()
         mock_api.return_value = mock_client
         client = HFClient()
@@ -108,7 +108,7 @@ def test_filter_files_subdirectory(hf_client: HFClient) -> None:
 
 def test_download_file(hf_client: HFClient) -> None:
     """Test downloading a single file."""
-    with patch("beyond_vibes.hf.hf_hub_download") as mock_download:
+    with patch("beyond_vibes.model_downloader.hf.hf_hub_download") as mock_download:
         mock_download.return_value = "/tmp/downloaded/model.bin"
 
         result = hf_client.download_file("test/repo", "main", "model.bin")
@@ -121,7 +121,7 @@ def test_download_file(hf_client: HFClient) -> None:
 
 def test_download_file_custom_revision(hf_client: HFClient) -> None:
     """Test downloading with custom revision."""
-    with patch("beyond_vibes.hf.hf_hub_download") as mock_download:
+    with patch("beyond_vibes.model_downloader.hf.hf_hub_download") as mock_download:
         mock_download.return_value = "/tmp/model.bin"
 
         hf_client.download_file("test/repo", "v2.0", "model.bin")

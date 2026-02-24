@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from beyond_vibes.models import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
+from beyond_vibes.model_downloader import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
 
 
 def test_model_config_valid() -> None:
