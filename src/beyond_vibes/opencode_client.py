@@ -2,18 +2,16 @@
 
 import logging
 from pathlib import Path
-from typing import Any
 
-from opencode_ai import APIConnectionError, APIError, Client
+import httpx
 
 from beyond_vibes.settings import settings
 
-# ruff: noqa: ANN401
 logger = logging.getLogger(__name__)
 
 
 class OpenCodeClient:
-    """Wrapper around opencode-ai SDK for simulation runs."""
+    """Wrapper around OpenCode API for simulation runs."""
 
     def __init__(self, base_url: str | None = None) -> None:
         """Initialize the OpenCode client.
@@ -24,32 +22,43 @@ class OpenCodeClient:
 
         """
         self.base_url = base_url or settings.opencode_url
-        self.client = Client(base_url=self.base_url)
+        self._client = httpx.Client(base_url=self.base_url, timeout=300.0)
         self._session_id: str | None = None
 
     def create_session(self, working_dir: Path) -> str:
         """Initialize a new session with the given working directory."""
-        try:
-            session = self.client.session.create()
-            self._session_id = session.id
+        response = self._client.post("/session", json={})
+        response.raise_for_status()
+        session_data = response.json()
+        session_id = session_data["id"]
+        self._session_id = session_id
 
-            self.client.session.init(
-                id=session.id,
-                message_id="init",
-                model_id=settings.opencode_provider,
-                provider_id=settings.opencode_provider,
-            )
+        self._init_session(
+            session_id=session_id,
+            model_id=settings.opencode_provider,
+            provider_id=settings.opencode_provider,
+        )
 
-            logger.info(
-                "Created session %s with working dir: %s", session.id, working_dir
-            )
-            return session.id
-        except APIConnectionError as e:
-            logger.error("Failed to connect to OpenCode server: %s", e)
-            raise
-        except APIError as e:
-            logger.error("Failed to create session: %s", e)
-            raise
+        logger.info("Created session %s with working dir: %s", session_id, working_dir)
+        return session_id
+
+    def _init_session(
+        self,
+        session_id: str,
+        model_id: str,
+        provider_id: str,
+    ) -> dict:
+        """Initialize a session (analyze the app and create AGENTS.md)."""
+        response = self._client.post(
+            f"/session/{session_id}/init",
+            json={
+                "messageID": "msg_init",
+                "modelID": model_id,
+                "providerID": provider_id,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
 
     def run_prompt(
         self,
@@ -57,29 +66,31 @@ class OpenCodeClient:
         prompt: str,
         model_id: str | None = None,
         provider_id: str | None = None,
-    ) -> Any:
+    ) -> dict:
         """Execute a prompt in the given session."""
         model_id = model_id or settings.opencode_provider
         provider_id = provider_id or settings.opencode_provider
+        message_id = f"msg_{session_id[:8]}"
 
-        try:
-            text_part: Any = {"text": prompt}
-            parts: list[Any] = [text_part]
+        response = self._client.post(
+            f"/session/{session_id}/message",
+            json={
+                "modelID": model_id,
+                "providerID": provider_id,
+                "parts": [{"type": "text", "text": prompt}],
+                "messageID": message_id,
+            },
+        )
+        response.raise_for_status()
+        response_data = response.json()
 
-            response = self.client.session.chat(
-                id=session_id,
-                model_id=model_id,
-                parts=parts,
-                provider_id=provider_id,
-            )
+        logger.debug(
+            "Ran prompt in session %s, got response: %s",
+            session_id,
+            response_data.get("info", {}).get("id"),
+        )
+        return response_data
 
-            logger.debug(
-                "Ran prompt in session %s, got response: %s", session_id, response.id
-            )
-            return response
-        except APIConnectionError as e:
-            logger.error("Connection error running prompt: %s", e)
-            raise
-        except APIError as e:
-            logger.error("Error running prompt: %s", e)
-            raise
+    def close(self) -> None:
+        """Close the HTTP client."""
+        self._client.close()

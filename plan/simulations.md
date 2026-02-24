@@ -174,8 +174,9 @@ dependencies = [
 
 ## Prerequisites
 
-- OpenCode CLI installed and server running (`opencode` in background)
+- OpenCode CLI installed and server running (`opencode serve` in background)
 - MLflow tracking server configured via `MLFLOW_TRACKING_URI`
+- Optional: Set `MLFLOW_TRACKING_USERNAME` and `MLFLOW_TRACKING_PASSWORD` if MLflow requires auth
 - Optional: Set `OPENCODE_URL` to configure server URL (default: http://localhost:54321)
 - Optional: Set `OPENCODE_PROVIDER` to configure provider (default: llamacpp)
 
