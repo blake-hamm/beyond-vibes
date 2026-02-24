@@ -6,8 +6,8 @@ from pathlib import Path
 import typer
 import yaml
 
-from beyond_vibes.config import Config
 from beyond_vibes.hf import HFClient
+from beyond_vibes.models import Config
 from beyond_vibes.s3 import S3Client
 from beyond_vibes.settings import settings
 

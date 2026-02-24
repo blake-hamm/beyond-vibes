@@ -4,7 +4,7 @@ from pathlib import Path
 
 from huggingface_hub import HfApi, hf_hub_download
 
-from beyond_vibes.config import ESSENTIAL_MODEL_CONFIGS
+from beyond_vibes.models import ESSENTIAL_MODEL_CONFIGS
 
 
 class HFClient:
