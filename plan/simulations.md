@@ -6,7 +6,7 @@ Implement CLI command(s) for running simulations that clone repos into a tempora
 
 ## Requirements Summary
 
-- **OpenCode integration**: Python SDK (`opencode-ai`) - requires OpenCode server running
+- **OpenCode integration**: Python SDK (`opencode-ai`) - requires OpenCode server running on configurable URL (default: http://localhost:54321, set via `OPENCODE_URL` env var), configurable provider (default: llamacpp, set via `OPENCODE_PROVIDER` env var)
 - **Prompts storage**: `src/beyond_vibes/simulations/prompts/` (MLflow 3.10 compatible)
 - **Sandbox**: Temporary directory using Python's `tempfile`
 - **MLflow**: From environment (`MLFLOW_TRACKING_URI`), capture all metrics for evals
@@ -85,7 +85,7 @@ prompt: |
    - `config.py` - Pydantic models: `SimulationConfig`, `RepositoryConfig`
 
 3. **Create OpenCode wrapper** (`src/beyond_vibes/opencode_client.py`)
-   - Wrap `opencode-ai` SDK (REST client - requires OpenCode server running on localhost:9090)
+   - Wrap `opencode-ai` SDK (REST client - requires OpenCode server running, URL configurable via `OPENCODE_URL` env var, default: http://localhost:54321; provider configurable via `OPENCODE_PROVIDER` env var, default: llamacpp)
    - `create_session(working_dir)` - Initialize with sandbox path
    - `run_prompt(session_id, prompt)` - Execute prompt
    - `get_messages(session_id)` - Retrieve conversation
@@ -156,6 +156,8 @@ uv run beyond-vibes simulate --task auth_plan --no-cleanup
 # Environment setup
 export MLFLOW_TRACKING_URI=databricks
 export OPENAI_API_KEY=...
+export OPENCODE_URL=http://localhost:54321  # Optional, this is the default
+export OPENCODE_PROVIDER=llamacpp  # Optional, this is the default
 
 # Ensure OpenCode server is running (required)
 opencode
@@ -177,6 +179,8 @@ dependencies = [
 
 - OpenCode CLI installed and server running (`opencode` in background)
 - MLflow tracking server configured via `MLFLOW_TRACKING_URI`
+- Optional: Set `OPENCODE_URL` to configure server URL (default: http://localhost:54321)
+- Optional: Set `OPENCODE_PROVIDER` to configure provider (default: llamacpp)
 
 ## Testing Strategy
 

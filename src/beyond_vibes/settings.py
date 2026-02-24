@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     s3_access_key: str
     s3_secret_key: str
     hf_token: str | None = None
+    opencode_url: str = "http://localhost:54321"
+    opencode_provider: str = "llamacpp"
 
     @field_validator("log_level", mode="before")
     @classmethod
