@@ -6,11 +6,19 @@ Implement CLI command(s) for running simulations that clone repos into a tempora
 
 ## Requirements Summary
 
-- **OpenCode integration**: Python SDK (`opencode-ai`)
-- **Prompts storage**: `src/beyond_vibes/prompts/` (MLflow 3.10 compatible)
+- **OpenCode integration**: Python SDK (`opencode-ai`) - requires OpenCode server running
+- **Prompts storage**: `src/beyond_vibes/simulations/prompts/` (MLflow 3.10 compatible)
 - **Sandbox**: Temporary directory using Python's `tempfile`
 - **MLflow**: From environment (`MLFLOW_TRACKING_URI`), capture all metrics for evals
 - **Scope**: Single simulation focus now, extensible for multiple later
+
+### MLflow 3.10 Features
+
+This implementation leverages MLflow 3.10 features:
+- **Multi-turn evaluation & conversation simulation** - for evaluating full agent sessions
+- **Trace cost tracking** - automatically captures LLM costs from spans
+- **Session-level scorers** - for archetype-specific evaluations
+- **In-UI trace evaluation** - run judges from MLflow UI
 
 ---
 
@@ -21,19 +29,19 @@ Implement CLI command(s) for running simulations that clone repos into a tempora
 ```
 src/beyond_vibes/
 ├── cli.py                      # Add `simulate` command
-├── prompts/
-│   ├── __init__.py
-│   ├── loader.py               # Load + render prompts with {{var}} syntax
-│   └── tasks/
-│       └── <archetype>/
-│           └── <task_name>.yaml
-├── simulation/
-│   ├── __init__.py
-│   ├── sandbox.py              # Temp dir + git clone
-│   ├── runner.py              # Execute via OpenCode SDK
-│   ├── config.py              # Pydantic models
-│   └── logging.py             # MLflow tracing integration
-└── opencode_client.py          # Wrapper around opencode-ai SDK
+└── simulations/
+    ├── __init__.py
+    ├── prompts/
+    │   ├── __init__.py
+    │   ├── loader.py           # Load + render prompts with {{var}} syntax
+    │   └── tasks/
+    │       └── <archetype>/
+    │           └── <task_name>.yaml
+    ├── sandbox.py              # Temp dir + git clone
+    ├── runner.py               # Execute via OpenCode SDK
+    ├── config.py               # Pydantic models
+    ├── logging.py              # MLflow tracing integration
+    └── opencode_client.py      # Wrapper around opencode-ai SDK
 ```
 
 ### Prompt Format (MLflow 3.10 Compatible)
@@ -65,24 +73,26 @@ prompt: |
 
 ### Phase 1: Core Infrastructure
 
-1. **Create prompt module** (`src/beyond_vibes/prompts/`)
+1. **Create prompt module** (`src/beyond_vibes/simulations/prompts/`)
    - `loader.py` - Load YAML prompts, render `{{variable}}` substitutions
 
-2. **Create simulation module** (`src/beyond_vibes/simulation/`)
+2. **Create simulation module** (`src/beyond_vibes/simulations/`)
    - `sandbox.py` - `SandboxManager`:
      - `tempfile.mkdtemp()` for workspace
      - `clone_repo(url, branch)` - Git clone
      - Context manager for automatic cleanup
+     - **Error handling**: Try/except around git clone for network/auth failures
    - `config.py` - Pydantic models: `SimulationConfig`, `RepositoryConfig`
 
 3. **Create OpenCode wrapper** (`src/beyond_vibes/opencode_client.py`)
-   - Wrap `opencode-ai` SDK
+   - Wrap `opencode-ai` SDK (REST client - requires OpenCode server running on localhost:9090)
    - `create_session(working_dir)` - Initialize with sandbox path
    - `run_prompt(session_id, prompt)` - Execute prompt
    - `get_messages(session_id)` - Retrieve conversation
    - `get_tool_calls(messages)` - Extract tool invocations
+   - **Error handling**: Wrap API calls in try/except for connection errors (server not running)
 
-4. **Create MLflow logger** (`src/beyond_vibes/simulation/logging.py`)
+4. **Create MLflow logger** (`src/beyond_vibes/simulations/logging.py`)
    - `SimulationLogger` class with context manager
    - Log all metrics from README.md evals:
      - **Universal**: Turns/steps, tool calls, schema errors, loop detection, TPS, TTFT
@@ -91,17 +101,20 @@ prompt: |
      - **Feature Implementation**: Completeness
      - **Comparative Research**: Citations, decisiveness
    - Log git diff as artifact
+   - **TPS/TTFT capture**: Use MLflow 3.10 trace spans - the OpenCode SDK response includes timing metadata. Document where this is extracted.
+   - **Error handling**: Wrap MLflow logging calls in try/except to prevent simulation failures from crashing on logging errors
 
 5. **Add CLI command** (`src/beyond_vibes/cli.py`)
    - Add `simulate` subcommand
-   - Options: `--task`, `--prompt-vars` (JSON), `--keep-sandbox`
+   - Options: `--task`, `--prompt-vars` (JSON), `--no-cleanup`
    - Flow: Load prompt → Clone repo → Run simulation → Log to MLflow
+   - **Error handling**: Wrap each phase in try/except - log failures but continue to cleanup
 
 ### Phase 2: First Task
 
 6. **Create first simulation task**
    - Choose "poetry to uv" (simplest from README.md)
-   - Create `prompts/tasks/repo_maintenance/poetry_to_uv.yaml`
+   - Create `simulations/prompts/tasks/repo_maintenance/poetry_to_uv.yaml`
 
 ### Phase 3: Extensibility (Future)
 
@@ -129,12 +142,15 @@ uv run beyond-vibes simulate --task poetry_to_uv
 # With custom prompt variables
 uv run beyond-vibes simulate --task auth_plan --prompt-vars '{"requirements": "OAuth2"}'
 
-# Keep sandbox for debugging
-uv run beyond-vibes simulate --task auth_plan --keep-sandbox
+# Keep sandbox for debugging (skip cleanup)
+uv run beyond-vibes simulate --task auth_plan --no-cleanup
 
 # Environment setup
 export MLFLOW_TRACKING_URI=databricks
 export OPENAI_API_KEY=...
+
+# Ensure OpenCode server is running (required)
+opencode
 ```
 
 ## Dependencies to Add
@@ -146,6 +162,11 @@ simulate = [
     "mlflow>=3.0.0",
 ]
 ```
+
+## Prerequisites
+
+- OpenCode CLI installed and server running (`opencode` in background)
+- MLflow tracking server configured via `MLFLOW_TRACKING_URI`
 
 ## Testing Strategy
 
