@@ -19,6 +19,7 @@ repos:
       language: system
       pass_filenames: false  # Prevent passing filenames as arguments
       stages: [pre-commit]
+      types_or: [python, pyi, jupyter]
 - repo: local
   hooks:
     - id: report-coverage
@@ -27,3 +28,4 @@ repos:
       language: system
       pass_filenames: false  # Prevent passing filenames as arguments
       stages: [pre-commit]
+      types_or: [python, pyi, jupyter]
