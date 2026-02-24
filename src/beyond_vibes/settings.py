@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     opencode_url: str = "http://localhost:54321"
     opencode_provider: str = "llamacpp"
+    mlflow_tracking_uri: str | None = None
 
     @field_validator("log_level", mode="before")
     @classmethod

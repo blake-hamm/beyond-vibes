@@ -92,15 +92,14 @@ prompt: |
 
 4. **Create MLflow logger** (`src/beyond_vibes/simulations/logging.py`)
    - `SimulationLogger` class with context manager
-   - Log all metrics from README.md evals:
-     - **Universal**: Turns/steps, tool calls, schema errors, loop detection, TPS, TTFT
-     - **Architectural**: Specificity, security, constraints
-     - **Repo Maintenance**: Pass/fail, diff stats
-     - **Feature Implementation**: Completeness
-     - **Comparative Research**: Citations, decisiveness
-   - Log git diff as artifact
-   - **TPS/TTFT capture**: Use MLflow 3.10 trace spans - the OpenCode SDK response includes timing metadata. Document where this is extracted.
+   - **Real-time approach**: Capture raw session data for later DSPy eval processing:
+     - **Params**: task_name, archetype, repo_url, branch
+     - **Metrics**: total_turns, total_time, tps, ttft, token_count
+     - **Artifacts**: Full conversation as JSON, git diff (if applicable), prompt, final response
+   - Use MLflow traces/spans for multi-turn conversation (MLflow 3.10 feature)
    - **Error handling**: Wrap MLflow logging calls in try/except to prevent simulation failures from crashing on logging errors
+
+   **Note**: Eval metrics (sycophancy, specificity, pass/fail, etc.) are computed post-process by DSPy judges on historical MLflow data. Real-time logging captures raw data needed for this.
 
 5. **Add CLI command** (`src/beyond_vibes/cli.py`)
    - Add `simulate` subcommand
