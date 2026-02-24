@@ -87,9 +87,7 @@ prompt: |
 3. **Create OpenCode wrapper** (`src/beyond_vibes/opencode_client.py`)
    - Wrap `opencode-ai` SDK (REST client - requires OpenCode server running, URL configurable via `OPENCODE_URL` env var, default: http://localhost:54321; provider configurable via `OPENCODE_PROVIDER` env var, default: llamacpp)
    - `create_session(working_dir)` - Initialize with sandbox path
-   - `run_prompt(session_id, prompt)` - Execute prompt
-   - `get_messages(session_id)` - Retrieve conversation
-   - `get_tool_calls(messages)` - Extract tool invocations
+   - `run_prompt(session_id, prompt)` - Execute prompt, returns response with content/parts
    - **Error handling**: Wrap API calls in try/except for connection errors (server not running)
 
 4. **Create MLflow logger** (`src/beyond_vibes/simulations/logging.py`)
