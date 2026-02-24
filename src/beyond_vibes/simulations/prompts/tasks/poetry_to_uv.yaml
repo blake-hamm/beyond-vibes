@@ -1,0 +1,18 @@
+name: "poetry_to_uv"
+description: "Migrate a project from poetry to uv"
+archetype: "repo_maintenance"
+repository:
+  url: "https://github.com/blake-hamm/lighthearted"
+  branch: "main"
+prompt: |
+  You are an expert DevOps engineer. Migrate this project from poetry to uv.
+
+  Requirements:
+  - Replace poetry.lock with uv.lock
+  - Ensure pyproject.toml is compatible with uv
+  - Remove any poetry-specific configuration
+
+  Steps:
+  1. Remove pyproject.toml if it exists
+  2. Add pyproject.toml for uv
+  3. Run uv lock to generate lock file

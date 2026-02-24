@@ -1,5 +1,6 @@
-"""CLI for downloading models from HuggingFace to S3."""
+"""CLI for beyond vibes."""
 
+import json
 import logging
 from pathlib import Path
 
@@ -8,8 +9,12 @@ import yaml
 
 from beyond_vibes.hf import HFClient
 from beyond_vibes.models import Config
+from beyond_vibes.opencode_client import OpenCodeClient
 from beyond_vibes.s3 import S3Client
 from beyond_vibes.settings import settings
+from beyond_vibes.simulations import SimulationLogger
+from beyond_vibes.simulations.prompts.loader import load_prompt
+from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,77 @@ def download(
                 )
 
     logger.info("Done!")
+
+
+@app.command()
+def simulate(
+    task: str = typer.Option(..., "--task", help="Task name (without .yaml)"),
+    prompt_vars: str = typer.Option(
+        "{}", "--prompt-vars", help="JSON dict of variables"
+    ),
+    no_cleanup: bool = typer.Option(False, "--no-cleanup", help="Skip sandbox cleanup"),
+) -> None:
+    """Run a simulation by cloning a repo and executing a prompt via OpenCode."""
+    prompts_dir = Path(__file__).parent / "simulations" / "prompts" / "tasks"
+    prompt_path = prompts_dir / f"{task}.yaml"
+
+    try:
+        variables = json.loads(prompt_vars)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in --prompt-vars: {e}")
+        raise typer.Exit(code=1) from e
+
+    try:
+        sim_config = load_prompt(prompt_path, variables)
+    except FileNotFoundError as e:
+        logger.error(f"Task not found: {prompt_path}")
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        logger.error(f"Failed to load prompt: {e}")
+        raise typer.Exit(code=1) from e
+
+    sandbox = SandboxManager()
+    opencode_client = OpenCodeClient()
+    sim_logger = SimulationLogger()
+
+    error_occurred = False
+    try:
+        with sim_logger.log_simulation(sim_config) as logger_ctx:
+            with sandbox.sandbox(
+                url=sim_config.repository.url,
+                branch=sim_config.repository.branch,
+            ) as working_dir:
+                if working_dir is None:
+                    raise RuntimeError("Failed to create sandbox")
+
+                logger.info(f"Running simulation '{sim_config.name}' in {working_dir}")
+
+                session_id = opencode_client.create_session(working_dir)
+
+                response = opencode_client.run_prompt(session_id, sim_config.prompt)
+
+                logger_ctx.log_turn(
+                    turn_index=0,
+                    response=str(response),
+                )
+
+                logger.info("Simulation completed successfully")
+
+    except Exception as e:
+        logger.error(f"Simulation failed: {e}")
+        error_occurred = True
+        if sim_logger.session:
+            sim_logger.log_error(str(e))
+
+    finally:
+        if no_cleanup:
+            logger.info(f"Sandbox preserved at: {sandbox.path}")
+        else:
+            sandbox.cleanup()
+            logger.info("Sandbox cleaned up")
+
+    if error_occurred:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
