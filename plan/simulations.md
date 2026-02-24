@@ -79,7 +79,7 @@ prompt: |
 2. **Create simulation module** (`src/beyond_vibes/simulations/`)
    - `sandbox.py` - `SandboxManager`:
      - `tempfile.mkdtemp()` for workspace
-     - `clone_repo(url, branch)` - Git clone
+     - `clone_repo(url, branch)` - Git clone using GitPython
      - Context manager for automatic cleanup
      - **Error handling**: Try/except around git clone for network/auth failures
    - `config.py` - Pydantic models: `SimulationConfig`, `RepositoryConfig`
@@ -122,6 +122,14 @@ prompt: |
    - Add `batch` subcommand for stratified runs
    - Add stratification config (model, quantization, container)
 
+### Other ideas:
+#### Advanced Git Operations (Future)
+ **Branch checkout and push for evals**
+   - After simulation, commit changes to a new branch
+   - Push to remote for evaluation/verification
+   - Could be leveraged for human-in-the-loop evals or automated PR workflows
+   - Note: Overkill for now, but valuable for later
+
 ---
 
 ## Key Design Decisions
@@ -156,8 +164,10 @@ opencode
 ## Dependencies to Add
 
 ```toml
-[project.optional-dependencies]
-simulate = [
+[project]
+dependencies = [
+    # ... existing dependencies ...
+    "gitpython>=3.1.0",
     "opencode-ai>=0.1.0",
     "mlflow>=3.0.0",
 ]
@@ -170,7 +180,7 @@ simulate = [
 
 ## Testing Strategy
 
-1. Unit tests for `SandboxManager` (mock git)
+1. Unit tests for `SandboxManager` (mock GitPython)
 2. Unit tests for prompt loader (verify variable substitution)
 3. Integration test with public repo
 4. Test MLflow logging (mock MLflow client)

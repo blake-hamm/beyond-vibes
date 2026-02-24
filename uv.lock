@@ -170,6 +170,7 @@ name = "beyond-vibes"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "gitpython" },
     { name = "huggingface-hub" },
     { name = "minio" },
     { name = "mlflow" },
@@ -200,6 +201,7 @@ requires-dist = [
     { name = "cookiecutter", marker = "extra == 'dev'", specifier = ">=2.6.0,<3.0.0" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.6.1,<8.0.0" },
     { name = "cruft", marker = "extra == 'dev'", specifier = ">=2.15.0,<3.0.0" },
+    { name = "gitpython", specifier = ">=3.1.0,<4.0.0" },
     { name = "huggingface-hub", specifier = ">=0.20.0,<1.0.0" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.0.0,<7.0.0" },
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0,<2.0.0" },
