@@ -144,3 +144,51 @@ uv run beyond-vibes download --config-path models.yaml --dry-run
 # Actual download
 uv run beyond-vibes download
 ```
+
+## CLI - Simulations
+
+Run simulations by cloning a repo and executing a prompt via OpenCode.
+
+### Prerequisites
+
+- OpenCode server running (default: http://127.0.0.1:4096)
+- MLflow tracking server configured (optional, for logging)
+- Model defined in `models.yaml`
+
+### Setup
+
+1. **Create `.env` file (if not already done):**
+```bash
+MLFLOW_TRACKING_URI=https://mlflow.example.com
+```
+
+2. **Ensure `models.yaml` has your model:**
+```yaml
+bucket: beyond-vibes
+models:
+  - name: minimax-m2.5-free
+    repo_id: opencode/minimax-m2.5-free
+    quant_tags: []
+```
+
+### Run
+
+```bash
+# Run simulation with a model from models.yaml
+uv run beyond-vibes simulate --task poetry_to_uv --model minimax-m2.5-free
+
+# With custom config
+uv run beyond-vibes simulate --task poetry_to_uv --model qwen3-0.6B --config-path mymodels.yaml
+
+# With custom prompt variables
+uv run beyond-vibes simulate --task auth_plan --model minimax-m2.5-free --prompt-vars '{"requirements": "OAuth2"}'
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--task` | Task name (without .yaml) - required |
+| `--model` | Model name from models.yaml - required |
+| `--config-path` | Path to models.yaml (default: models.yaml) |
+| `--prompt-vars` | JSON dict of variables for prompt templating (default: {}) |

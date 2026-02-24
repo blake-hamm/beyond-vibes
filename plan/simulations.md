@@ -2,11 +2,12 @@
 
 ## Overview
 
-Implement CLI command(s) for running simulations that clone repos into a temporary sandbox, execute prompts via OpenCode Python SDK, and log all session data to MLflow for evaluation.
+Implement CLI command(s) for running simulations that clone repos into a temporary sandbox, execute prompts via OpenCode, and log all session data to MLflow for evaluation.
 
 ## Requirements Summary
 
-- **OpenCode integration**: Python SDK (`opencode-ai`) - requires OpenCode server running on configurable URL (default: http://localhost:54321, set via `OPENCODE_URL` env var), configurable provider (default: llamacpp, set via `OPENCODE_PROVIDER` env var)
+- **OpenCode integration**: Direct HTTP calls via httpx (SDK was unmaintained) - requires OpenCode server running on configurable URL (default: http://127.0.0.1:4096, set via `OPENCODE_URL` env var), configurable provider (default: opencode, set via `OPENCODE_PROVIDER` env var)
+- **Model selection**: Models defined in `models.yaml`, selected via `--model` CLI argument
 - **Prompts storage**: `src/beyond_vibes/simulations/prompts/` (MLflow 3.10 compatible)
 - **Sandbox**: Temporary directory using Python's `tempfile`
 - **MLflow**: From environment (`MLFLOW_TRACKING_URI`), capture all metrics for evals
@@ -35,14 +36,13 @@ src/beyond_vibes/
     │   ├── __init__.py
     │   ├── loader.py           # Load + render prompts with {{var}} syntax
     │   └── tasks/
-    │       └── <archetype>/
-    │           └── <task_name>.yaml
+    │       └── <task_name>.yaml
     ├── sandbox.py              # Temp dir + git clone
-    ├── runner.py               # Execute via OpenCode SDK
     ├── config.py               # Pydantic models
-    ├── logging.py              # MLflow tracing integration
-    └── opencode_client.py      # Wrapper around opencode-ai SDK
+    └── logging.py              # MLflow tracing integration
 ```
+
+Note: `opencode_client.py` is in `src/beyond_vibes/` (not in simulations/) as a standalone module.
 
 ### Prompt Format (MLflow 3.10 Compatible)
 
@@ -84,11 +84,11 @@ prompt: |
      - **Error handling**: Try/except around git clone for network/auth failures
    - `config.py` - Pydantic models: `SimulationConfig`, `RepositoryConfig`
 
-3. **Create OpenCode wrapper** (`src/beyond_vibes/opencode_client.py`)
-   - Wrap `opencode-ai` SDK (REST client - requires OpenCode server running, URL configurable via `OPENCODE_URL` env var, default: http://localhost:54321; provider configurable via `OPENCODE_PROVIDER` env var, default: llamacpp)
-   - `create_session(working_dir)` - Initialize with sandbox path
-   - `run_prompt(session_id, prompt)` - Execute prompt, returns response with content/parts
-   - **Error handling**: Wrap API calls in try/except for connection errors (server not running)
+3. **Create OpenCode client** (`src/beyond_vibes/opencode_client.py`)
+   - Direct HTTP calls via httpx (replaced unmaintained opencode-ai SDK)
+   - `create_session(working_dir)` - Initialize session (no init call - repos already have AGENTS.md)
+   - `run_prompt(session_id, prompt, model_id)` - Execute prompt, returns response with content/parts
+   - **Error handling**: httpx exceptions propagate naturally
 
 4. **Create MLflow logger** (`src/beyond_vibes/simulations/logging.py`)
    - `SimulationLogger` class with context manager
@@ -103,15 +103,15 @@ prompt: |
 
 5. **Add CLI command** (`src/beyond_vibes/cli.py`)
    - Add `simulate` subcommand
-   - Options: `--task`, `--prompt-vars` (JSON), `--no-cleanup`
-   - Flow: Load prompt → Clone repo → Run simulation → Log to MLflow
+   - Options: `--task`, `--model` (required), `--config-path`, `--prompt-vars` (JSON)
+   - Flow: Load model config → Load prompt → Clone repo → Run simulation → Log to MLflow
    - **Error handling**: Wrap each phase in try/except - log failures but continue to cleanup
 
 ### Phase 2: First Task
 
 6. **Create first simulation task**
    - Choose "poetry to uv" (simplest from README.md)
-   - Create `simulations/prompts/tasks/repo_maintenance/poetry_to_uv.yaml`
+   - Create `simulations/prompts/tasks/poetry_to_uv.yaml`
 
 ### Phase 3: Extensibility (Future)
 
@@ -121,7 +121,7 @@ prompt: |
 
 ### Other ideas:
 #### Advanced Git Operations (Future)
- **Branch checkout and push for evals**
+**Branch checkout and push for evals**
    - After simulation, commit changes to a new branch
    - Push to remote for evaluation/verification
    - Could be leveraged for human-in-the-loop evals or automated PR workflows
@@ -135,50 +135,69 @@ prompt: |
 2. **Sandbox as context manager**: Ensures cleanup even on errors
 3. **YAML over Python**: Prompts stored as YAML for version control, easier editing
 4. **Separation of concerns**: Prompts, simulation, and CLI are separate modules
+5. **httpx over SDK**: Replaced unmaintained opencode-ai SDK with direct HTTP calls for better control and reliability
+6. **models.yaml as source of truth**: Model configuration lives in models.yaml, selected via CLI
 
 ---
 
 ## CLI Usage (After Implementation)
 
 ```bash
-# Run simulation
-uv run beyond-vibes simulate --task poetry_to_uv
+# Run simulation with model from models.yaml
+uv run beyond-vibes simulate --task poetry_to_uv --model minimax-m2.5-free
+
+# With custom config (different models.yaml)
+uv run beyond-vibes simulate --task poetry_to_uv --model qwen3-0.6B --config-path mymodels.yaml
 
 # With custom prompt variables
-uv run beyond-vibes simulate --task auth_plan --prompt-vars '{"requirements": "OAuth2"}'
-
-# Keep sandbox for debugging (skip cleanup)
-uv run beyond-vibes simulate --task auth_plan --no-cleanup
+uv run beyond-vibes simulate --task auth_plan --model minimax-m2.5-free --prompt-vars '{"requirements": "OAuth2"}'
 
 # Environment setup
-export MLFLOW_TRACKING_URI=databricks
-export OPENAI_API_KEY=...
-export OPENCODE_URL=http://localhost:54321  # Optional, this is the default
-export OPENCODE_PROVIDER=llamacpp  # Optional, this is the default
+export MLFLOW_TRACKING_URI=https://mlflow.bhamm-lab.com
+export OPENCODE_URL=http://127.0.0.1:4096  # Optional, this is the default
+export OPENCODE_PROVIDER=opencode  # Optional, this is the default
 
 # Ensure OpenCode server is running (required)
 opencode
 ```
 
-## Dependencies to Add
+## models.yaml Format
+
+```yaml
+bucket: beyond-vibes
+models:
+  - name: minimax-m2.5-free
+    repo_id: opencode/minimax-m2.5-free
+    quant_tags: []
+  - name: qwen3-0.6B
+    repo_id: unsloth/Qwen3-0.6B-GGUF
+    quant_tags:
+      - Q6_K_XL
+      - Q8_K_XL
+      - BF16
+```
+
+## Dependencies
 
 ```toml
 [project]
 dependencies = [
     # ... existing dependencies ...
     "gitpython>=3.1.0",
-    "opencode-ai>=0.1.0",
+    "httpx>=0.27.0",
     "mlflow>=3.0.0",
 ]
 ```
+
+Note: Removed `opencode-ai` SDK dependency - replaced with httpx.
 
 ## Prerequisites
 
 - OpenCode CLI installed and server running (`opencode serve` in background)
 - MLflow tracking server configured via `MLFLOW_TRACKING_URI`
 - Optional: Set `MLFLOW_TRACKING_USERNAME` and `MLFLOW_TRACKING_PASSWORD` if MLflow requires auth
-- Optional: Set `OPENCODE_URL` to configure server URL (default: http://localhost:54321)
-- Optional: Set `OPENCODE_PROVIDER` to configure provider (default: llamacpp)
+- Optional: Set `OPENCODE_URL` to configure server URL (default: http://127.0.0.1:4096)
+- Optional: Set `OPENCODE_PROVIDER` to configure provider (default: opencode)
 
 ## Testing Strategy
 
