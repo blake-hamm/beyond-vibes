@@ -9,13 +9,15 @@ authors = [
 license = {text = "BSD license"}
 requires-python = ">=3.12"
 dependencies = [
-  "typer",
-  "pydantic>=2.0",
-  "pydantic-settings>=2.0",
-  "pyyaml",
-  "minio",
-  "huggingface-hub",
-  "python-dotenv",
+  "typer>=0.15.0,<1.0.0",
+  "pydantic>=2.0,<3.0",
+  "pydantic-settings>=2.0,<3.0",
+  "pyyaml>=6.0,<7.0",
+  "minio>=7.0.0,<8.0.0",
+  "huggingface-hub>=0.20.0,<1.0.0",
+  "python-dotenv>=1.0.0,<2.0.0",
+  "opencode-ai>=0.1.0a36,<1.0.0",
+  "mlflow>=3.0.0,<4.0.0",
 ]
 
 [project.scripts]
@@ -23,16 +25,16 @@ beyond-vibes = "beyond_vibes.cli:app"
 
 [project.optional-dependencies]
 dev = [
-  "cookiecutter>=2.6.0",
-  "cruft>=2.15.0",
-  "pytest>=8.3.2",
-  "pytest-cov>=5.0.0",
-  "coverage>=7.6.1",
-  "ruff>=0.5.7",
-  "pre-commit>=3.8.0",
-  "ipykernel",
-  "notebook",
-  "jupyter",
+  "cookiecutter>=2.6.0,<3.0.0",
+  "cruft>=2.15.0,<3.0.0",
+  "pytest>=8.3.2,<9.0.0",
+  "pytest-cov>=5.0.0,<6.0.0",
+  "coverage>=7.6.1,<8.0.0",
+  "ruff>=0.5.7,<1.0.0",
+  "pre-commit>=3.8.0,<4.0.0",
+  "ipykernel>=6.0.0,<7.0.0",
+  "notebook>=7.0.0,<8.0.0",
+  "jupyter>=1.0.0,<2.0.0",
 ]
 
 [build-system]
