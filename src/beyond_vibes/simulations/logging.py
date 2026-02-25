@@ -51,7 +51,7 @@ class SimulationLogger:
 
     def __init__(
         self,
-        experiment_name: str = "beyond-vibes-simulations",
+        experiment_name: str = "beyond-vibes",
         tracking_uri: str | None = None,
     ) -> None:
         """Initialize simulation logger with MLflow tracking."""

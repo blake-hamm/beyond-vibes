@@ -167,10 +167,16 @@ def _run_simulation(
                 )
 
                 session_id = opencode_client.create_session(working_dir)
+                prompt = sim_config.prompt
+                if settings.system_prompt:
+                    prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
+                if sim_config.system_prompt:
+                    prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
                 response = opencode_client.run_prompt(
                     session_id,
-                    sim_config.prompt,
+                    prompt,
                     model_id=model_config.name,
+                    agent=sim_config.agent,
                 )
 
                 logger_ctx.log_turn(turn_index=0, response=str(response))

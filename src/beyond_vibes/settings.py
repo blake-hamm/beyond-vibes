@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     opencode_url: str = "http://127.0.0.1:4096"
     opencode_provider: str = "opencode"
+    system_prompt: str | None = None
     mlflow_tracking_uri: str | None = None
     mlflow_tracking_username: str | None = None
     mlflow_tracking_password: str | None = None

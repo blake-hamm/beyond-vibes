@@ -18,3 +18,5 @@ class SimulationConfig(BaseModel):
     archetype: str
     repository: RepositoryConfig
     prompt: str
+    agent: str = "build"
+    system_prompt: str | None = None

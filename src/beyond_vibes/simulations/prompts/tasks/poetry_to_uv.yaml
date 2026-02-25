@@ -4,6 +4,10 @@ archetype: "repo_maintenance"
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
+agent: "build"
+system_prompt: |
+  You are running on NixOS. Never ask for human feedback or confirmation.
+  Just proceed with the best approach and explain what you did afterward.
 prompt: |
   You are an expert DevOps engineer. Migrate this project from poetry to uv.
 

@@ -1,6 +1,7 @@
 """OpenCode client wrapper for running simulations."""
 
 import logging
+import time
 from pathlib import Path
 
 import httpx
@@ -42,6 +43,7 @@ class OpenCodeClient:
         prompt: str,
         model_id: str | None = None,
         provider_id: str | None = None,
+        agent: str = "build",
     ) -> dict:
         """Execute a prompt in the given session."""
         model_id = model_id or settings.opencode_provider
@@ -49,23 +51,71 @@ class OpenCodeClient:
         message_id = f"msg_{session_id[:8]}"
 
         response = self._client.post(
-            f"/session/{session_id}/message",
+            f"/session/{session_id}/prompt_async",
             json={
-                "modelID": model_id,
-                "providerID": provider_id,
+                "model": {
+                    "modelID": model_id,
+                    "providerID": provider_id,
+                },
+                "agent": agent,
                 "parts": [{"type": "text", "text": prompt}],
                 "messageID": message_id,
             },
         )
         response.raise_for_status()
-        response_data = response.json()
 
         logger.debug(
-            "Ran prompt in session %s, got response: %s",
+            "Waiting for message to complete in session %s",
             session_id,
-            response_data.get("info", {}).get("id"),
         )
-        return response_data
+
+        last_message_count = 0
+        max_attempts = 600
+        attempt = 0
+        while attempt < max_attempts:
+            messages_response = self._client.get(f"/session/{session_id}/message")
+            messages_response.raise_for_status()
+            messages = messages_response.json()
+
+            assistant_messages = [
+                m for m in messages if m.get("info", {}).get("role") == "assistant"
+            ]
+
+            if assistant_messages:
+                latest = assistant_messages[-1]
+                msg_info = latest.get("info", {})
+                if msg_info.get("time", {}).get("completed"):
+                    logger.debug(
+                        "Session %s completed with %d messages",
+                        session_id,
+                        len(messages),
+                    )
+                    return latest
+
+            if len(messages) > last_message_count:
+                logger.debug(
+                    "Session %s has %d messages (waiting for completion)",
+                    session_id,
+                    len(messages),
+                )
+                last_message_count = len(messages)
+
+            attempt += 1
+            time.sleep(5)
+
+        logger.warning(
+            "Timed out waiting for session %s to complete",
+            session_id,
+        )
+        return {
+            "info": {
+                "error": {
+                    "name": "Timeout",
+                    "message": f"Timed out waiting for session {session_id}",
+                }
+            },
+            "parts": [],
+        }
 
     def close(self) -> None:
         """Close the HTTP client."""
