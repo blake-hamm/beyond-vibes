@@ -12,6 +12,7 @@ from beyond_vibes.opencode_client import OpenCodeClient
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations import SimulationLogger
 from beyond_vibes.simulations.models import SimulationConfig
+from beyond_vibes.simulations.orchestration import _run_simulation
 from beyond_vibes.simulations.prompts.loader import load_prompt
 from beyond_vibes.simulations.sandbox import SandboxManager
 
@@ -92,14 +93,23 @@ def simulate(
     prompt_vars: str = typer.Option(
         "{}", "--prompt-vars", help="JSON dict of variables"
     ),
+    quant: str | None = typer.Option(
+        None,
+        "--quant",
+        help="Quantization tag (e.g., Q6_K_XL). Uses first if not specified.",
+    ),
 ) -> None:
     """Run a simulation by cloning a repo and executing a prompt via OpenCode."""
     model_config = _load_model_config(model, config_path)
     sim_config = _load_task_config(task, prompt_vars)
 
+    quant_tag = quant or (
+        model_config.quant_tags[0] if model_config.quant_tags else None
+    )
+
     sandbox = SandboxManager()
     opencode_client = OpenCodeClient()
-    sim_logger = SimulationLogger()
+    sim_logger = SimulationLogger(quant_tag=quant_tag)
 
     error_occurred = _run_simulation(
         sim_config, model_config, sandbox, opencode_client, sim_logger
@@ -142,53 +152,6 @@ def _load_task_config(task: str, prompt_vars: str) -> SimulationConfig:
     except Exception as e:
         logger.error(f"Failed to load prompt: {e}")
         raise typer.Exit(code=1) from None
-
-
-def _run_simulation(
-    sim_config: SimulationConfig,
-    model_config: ModelConfig,
-    sandbox: SandboxManager,
-    opencode_client: OpenCodeClient,
-    sim_logger: SimulationLogger,
-) -> bool:
-    """Execute the simulation and return True if error occurred."""
-    error_occurred = False
-    try:
-        with sim_logger.log_simulation(sim_config) as logger_ctx:
-            with sandbox.sandbox(
-                url=sim_config.repository.url,
-                branch=sim_config.repository.branch,
-            ) as working_dir:
-                if working_dir is None:
-                    raise RuntimeError("Failed to create sandbox")
-
-                logger.info(
-                    "Running simulation '%s' in %s", sim_config.name, working_dir
-                )
-
-                session_id = opencode_client.create_session(working_dir)
-                prompt = sim_config.prompt
-                if settings.system_prompt:
-                    prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
-                if sim_config.system_prompt:
-                    prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
-                response = opencode_client.run_prompt(
-                    session_id,
-                    prompt,
-                    model_id=model_config.name,
-                    agent=sim_config.agent,
-                )
-
-                logger_ctx.log_turn(turn_index=0, response=str(response))
-                logger.info("Simulation completed successfully")
-
-    except Exception as e:
-        logger.error("Simulation failed: %s", e)
-        error_occurred = True
-        if sim_logger.session:
-            sim_logger.log_error(str(e))
-
-    return error_occurred
 
 
 if __name__ == "__main__":

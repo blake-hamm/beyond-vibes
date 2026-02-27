@@ -20,3 +20,4 @@ class SimulationConfig(BaseModel):
     prompt: str
     agent: str = "build"
     system_prompt: str | None = None
+    max_turns: int = 75

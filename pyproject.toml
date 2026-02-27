@@ -1,0 +1,71 @@
+[project]
+name = "beyond_vibes"
+version = "0.1.0"
+description = "LLM evaluation framework for testing self-hosted, open source models running on llama.cpp."
+readme = "README.md"
+authors = [
+    {name = "Blake Hamm", email = "blake.j.hamm@gmail.com"},
+]
+license = {text = "BSD license"}
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.15.0,<1.0.0",
+    "pydantic>=2.0,<3.0",
+    "pydantic-settings>=2.0,<3.0",
+    "pyyaml>=6.0,<7.0",
+    "minio>=7.0.0,<8.0.0",
+    "huggingface-hub>=0.20.0,<1.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "gitpython>=3.1.0,<4.0.0",
+    "mlflow>=3.0.0,<4.0.0",
+    "httpx>=0.28.1",
+    "boto3>=1.42.57",
+]
+
+[project.scripts]
+beyond-vibes = "beyond_vibes.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "cookiecutter>=2.6.0,<3.0.0",
+    "cruft>=2.15.0,<3.0.0",
+    "pytest>=8.3.2,<9.0.0",
+    "pytest-cov>=5.0.0,<6.0.0",
+    "coverage>=7.6.1,<8.0.0",
+    "ruff>=0.5.7,<1.0.0",
+    "pre-commit>=3.8.0,<4.0.0",
+    "ipykernel>=6.0.0,<7.0.0",
+    "notebook>=7.0.0,<8.0.0",
+    "jupyter>=1.0.0,<2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff.lint]
+select = ["I", "F", "E", "W", "N", "D", "ANN", "B", "A", "T20", "PYI", "Q", "RET", "ARG", "PTH", "PL", "PT"]
+ignore = ["D203", "D213"]
+
+[tool.pytest.ini_options]
+addopts = "-s"
+testpaths = ["tests"]
+
+[tool.coverage]
+source = [
+    "src",
+    "tests",
+    "notebooks",
+]
+
+[tool.coverage.run]
+command_line = "-m pytest"
+omit = ["*test*", "*__init__*", ".venv/*"]
+include = ["src/*", "tests/*", "notebooks/*"]
+
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+ignore_errors = true
+show_missing = true

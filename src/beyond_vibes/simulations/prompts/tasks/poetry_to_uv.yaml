@@ -10,13 +10,16 @@ system_prompt: |
   Just proceed with the best approach and explain what you did afterward.
 prompt: |
   You are an expert DevOps engineer. Migrate this project from poetry to uv.
+  The latest cookiecutter in the cruft project is now based on uv.
+  Make sure the cruft file is updated to the latest main branch.
 
   Requirements:
+  - Ensure cruft is updated to the main branch
   - Replace poetry.lock with uv.lock
   - Ensure pyproject.toml is compatible with uv
   - Remove any poetry-specific configuration
 
   Steps:
-  1. Remove pyproject.toml if it exists
-  2. Add pyproject.toml for uv
+  1. Update cruft
+  2. Troubleshoot and adjust pyproject.toml so it's functioning with uv
   3. Run uv lock to generate lock file
