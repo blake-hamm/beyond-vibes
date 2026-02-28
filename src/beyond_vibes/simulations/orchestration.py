@@ -37,6 +37,7 @@ class SimulationOrchestrator:
         branch: str,
         prompt: str,
         model_id: str,
+        provider: str,
         agent: str,
         max_turns: int = 75,
     ) -> Generator[dict, None, None]:
@@ -48,7 +49,9 @@ class SimulationOrchestrator:
             logger.info("Running simulation in %s", working_dir)
 
             self._session_id = self.opencode.create_session(working_dir)
-            self.opencode.send_prompt(self._session_id, prompt, model_id, agent)
+            self.opencode.send_prompt(
+                self._session_id, prompt, model_id, provider, agent
+            )
 
             try:
                 while True:
@@ -126,6 +129,7 @@ def _run_simulation(
                 branch=sim_config.repository.branch,
                 prompt=prompt,
                 model_id=model_config.get_model_id(),
+                provider=model_config.provider,
                 agent=sim_config.agent,
                 max_turns=sim_config.max_turns,
             ):

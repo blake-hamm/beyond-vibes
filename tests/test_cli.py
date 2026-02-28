@@ -40,6 +40,7 @@ def test_download_with_config(
             {
                 "name": "test-model",
                 "repo_id": "test/repo",
+                "provider": "local",
                 "quant_tags": ["Q8_0"],
             }
         ],
@@ -81,6 +82,7 @@ def test_download_dry_run(
             {
                 "name": "test-model",
                 "repo_id": "test/repo",
+                "provider": "local",
                 "quant_tags": ["Q8_0"],
             }
         ],
@@ -121,6 +123,7 @@ def test_download_lists_files(
             {
                 "name": "test-model",
                 "repo_id": "test/repo",
+                "provider": "local",
                 "quant_tags": ["Q8_0"],
             }
         ],
@@ -160,11 +163,13 @@ def test_download_multiple_models(
             {
                 "name": "model-1",
                 "repo_id": "test/repo1",
+                "provider": "local",
                 "quant_tags": ["Q8_0"],
             },
             {
                 "name": "model-2",
                 "repo_id": "test/repo2",
+                "provider": "local",
                 "quant_tags": ["Q4_K_M"],
             },
         ],

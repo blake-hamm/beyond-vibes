@@ -5,6 +5,7 @@ models:
   - name: minimax-m2.5
     provider: opencode-go
   - name: qwen3-0.6B
+    provider: local
     repo_id: unsloth/Qwen3-0.6B-GGUF
     quant_tags:
       - Q6_K_XL

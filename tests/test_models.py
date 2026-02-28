@@ -11,6 +11,7 @@ def test_model_config_valid() -> None:
     config = ModelConfig(
         name="mistral-7b",
         repo_id="TheBloke/Mistral-7B-GGUF",
+        provider="local",
         quant_tags=["Q8_0", "Q4_K_M"],
     )
     assert config.name == "mistral-7b"
@@ -24,6 +25,7 @@ def test_model_config_custom_revision() -> None:
     config = ModelConfig(
         name="test-model",
         repo_id="test/repo",
+        provider="local",
         quant_tags=["Q4_K_M"],
         revision="v1.0",
     )
@@ -71,6 +73,7 @@ def test_model_config_get_model_id_fallback() -> None:
     config = ModelConfig(
         name="mistral-7b",
         repo_id="TheBloke/Mistral-7B-GGUF",
+        provider="local",
         quant_tags=[],
     )
     assert config.get_model_id() == "mistral-7b"
@@ -91,6 +94,7 @@ def test_model_config_empty_quant_tags() -> None:
     config = ModelConfig(
         name="test-model",
         repo_id="test/repo",
+        provider="local",
         quant_tags=[],
     )
     assert config.quant_tags == []
@@ -104,6 +108,7 @@ def test_config_valid() -> None:
             ModelConfig(
                 name="mistral-7b",
                 repo_id="TheBloke/Mistral-7B-GGUF",
+                provider="local",
                 quant_tags=["Q8_0"],
             ),
         ],
@@ -132,11 +137,13 @@ def test_config_multiple_models() -> None:
             ModelConfig(
                 name="mistral-7b",
                 repo_id="TheBloke/Mistral-7B-GGUF",
+                provider="local",
                 quant_tags=["Q8_0"],
             ),
             ModelConfig(
                 name="llama-13b",
                 repo_id="TheBloke/Llama-2-13B-GGUF",
+                provider="local",
                 quant_tags=["Q4_K_M"],
             ),
         ],

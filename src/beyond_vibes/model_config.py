@@ -20,7 +20,7 @@ class ModelConfig(BaseModel):
 
     name: str
     repo_id: str | None = None
-    provider: str = "local"
+    provider: str
     model_id: str | None = None
     quant_tags: list[str] = []
     revision: str = "main"
