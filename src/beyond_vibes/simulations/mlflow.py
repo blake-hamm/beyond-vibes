@@ -91,25 +91,22 @@ class MlflowTracer:
                     session_id,
                 )
 
-                try:
-                    # Parameters (performance analysis)
-                    mlflow.log_param("model.name", model_config.name)
-                    mlflow.log_param("model.provider", model_config.provider)
-                    mlflow.log_param("model.model_id", model_config.get_model_id())
-                    if model_config.repo_id:
-                        mlflow.log_param("model.repo_id", model_config.repo_id)
-                    if self.quant_tag:
-                        mlflow.log_param("model.quant", self.quant_tag)
-                    if self.container_tag:
-                        mlflow.log_param("runtime.container", self.container_tag)
+                # Parameters (performance analysis)
+                mlflow.log_param("model.name", model_config.name)
+                mlflow.log_param("model.provider", model_config.provider)
+                mlflow.log_param("model.model_id", model_config.get_model_id())
+                if model_config.repo_id:
+                    mlflow.log_param("model.repo_id", model_config.repo_id)
+                if self.quant_tag:
+                    mlflow.log_param("model.quant", self.quant_tag)
+                if self.container_tag:
+                    mlflow.log_param("runtime.container", self.container_tag)
 
-                    # Tags (filtering)
-                    mlflow.set_tag("task.name", sim_config.name)
-                    mlflow.set_tag("task.archetype", sim_config.archetype)
-                    mlflow.set_tag("repository.url", sim_config.repository.url)
-                    mlflow.set_tag("repository.branch", sim_config.repository.branch)
-                except Exception as e:
-                    logger.warning("Failed to set tags: %s", e)
+                # Tags (filtering)
+                mlflow.set_tag("task.name", sim_config.name)
+                mlflow.set_tag("task.archetype", sim_config.archetype)
+                mlflow.set_tag("repository.url", sim_config.repository.url)
+                mlflow.set_tag("repository.branch", sim_config.repository.branch)
 
                 yield self
 
@@ -132,36 +129,30 @@ class MlflowTracer:
         created_ms = time_info.get("created")
         completed_ms = time_info.get("completed")
 
-        try:
-            # Convert milliseconds to nanoseconds for MLflow
-            start_time_ns = int(created_ms * 1_000_000)
-            end_time_ns = int(completed_ms * 1_000_000)
+        # Convert milliseconds to nanoseconds for MLflow
+        start_time_ns = int(created_ms * 1_000_000)
+        end_time_ns = int(completed_ms * 1_000_000)
 
-            # Use start_span_no_context to set custom timestamps
-            span = mlflow.start_span_no_context(
-                name=f"message_{message_index}",
-                start_time_ns=start_time_ns,
-            )
+        # Create independent span with session_id in metadata
+        # Each span is its own root trace, but shares the session_id
+        span = mlflow.start_span_no_context(
+            name=f"message_{message_index}",
+            start_time_ns=start_time_ns,
+            metadata={"mlflow.trace.session": self.session.session_id},
+        )
 
-            span.set_inputs(
-                {
-                    "message_index": message_index,
-                    "message_id": message.get("info", {}).get("id", ""),
-                    "role": message.get("info", {}).get("role", ""),
-                }
-            )
+        span.set_inputs(
+            {
+                "message_index": message_index,
+                "message_id": message.get("info", {}).get("id", ""),
+                "role": message.get("info", {}).get("role", ""),
+            }
+        )
 
-            span.set_outputs({"raw_message": message})
+        span.set_outputs({"raw_message": message})
 
-            # End span with custom timestamp
-            span.end(end_time_ns=end_time_ns)
-
-            mlflow.update_current_trace(
-                metadata={"mlflow.trace.session": self.session.session_id}
-            )
-
-        except Exception as e:
-            logger.warning("Failed to log message as span: %s", e)
+        # End span with custom timestamp
+        span.end(end_time_ns=end_time_ns)
 
         msg_data = MessageData(
             message_index=message_index,
@@ -186,64 +177,28 @@ class MlflowTracer:
 
         self.session.error = error_message
 
-        try:
-            mlflow.update_current_trace(
-                metadata={"mlflow.trace.session": self.session.session_id}
-            )
-        except Exception as e:
-            logger.warning("Failed to update trace with error: %s", e)
-
     def _flush(self) -> None:
         """Flush all accumulated data to MLflow."""
         if not self.run_id or self.session is None:
             return
 
-        try:
-            self.session.completed_at = datetime.now()
-            if self.session.started_at and self.session.completed_at:
-                self.session.total_time_seconds = (
-                    self.session.completed_at - self.session.started_at
-                ).total_seconds()
+        self.session.completed_at = datetime.now()
+        if self.session.started_at and self.session.completed_at:
+            self.session.total_time_seconds = (
+                self.session.completed_at - self.session.started_at
+            ).total_seconds()
 
-            self.session.total_messages = len(self.session.messages)
+        self.session.total_messages = len(self.session.messages)
 
-            try:
-                with mlflow.start_span(name="simulation_summary") as span:
-                    span.set_inputs(
-                        {
-                            "task": self.session.sim_config.name,
-                            "archetype": self.session.sim_config.archetype,
-                            "repo_url": self.session.sim_config.repository.url,
-                            "model": self.session.model_config.name,
-                        }
-                    )
+        mlflow.log_metric("total_messages", self.session.total_messages)
 
-                    span.set_outputs(
-                        {
-                            "total_messages": self.session.total_messages,
-                            "total_time_seconds": self.session.total_time_seconds,
-                            "has_error": bool(self.session.error),
-                        }
-                    )
+        if self.session.total_time_seconds is not None:
+            mlflow.log_metric("total_time_seconds", self.session.total_time_seconds)
 
-                mlflow.update_current_trace(
-                    metadata={"mlflow.trace.session": self.session.session_id}
-                )
-            except Exception as e:
-                logger.warning("Failed to log summary span: %s", e)
+        if self.session.error:
+            mlflow.log_metric("has_error", 1)
 
-            mlflow.log_metric("total_messages", self.session.total_messages)
+        if self.session.git_diff:
+            mlflow.log_text(self.session.git_diff, "git_diff.patch")
 
-            if self.session.total_time_seconds is not None:
-                mlflow.log_metric("total_time_seconds", self.session.total_time_seconds)
-
-            if self.session.error:
-                mlflow.log_metric("has_error", 1)
-
-            if self.session.git_diff:
-                mlflow.log_text(self.session.git_diff, "git_diff.patch")
-
-            logger.info("Flushed session data to MLflow run %s", self.run_id)
-
-        except Exception as e:
-            logger.warning("Failed to flush session data to MLflow: %s", e)
+        logger.info("Flushed session data to MLflow run %s", self.run_id)
