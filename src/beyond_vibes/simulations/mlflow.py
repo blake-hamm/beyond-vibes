@@ -45,6 +45,10 @@ class SimulationSession:
     messages: list[MessageData] = field(default_factory=list)
     git_diff: str | None = None
     error: str | None = None
+    total_cost: float = 0.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
 
 
 class MlflowTracer:
@@ -154,6 +158,18 @@ class MlflowTracer:
         # End span with custom timestamp
         span.end(end_time_ns=end_time_ns)
 
+        # Accumulate cost and token totals from message info
+        info = message.get("info", {})
+        cost = info.get("cost", 0.0)
+        tokens = info.get("tokens", {})
+        input_tokens = tokens.get("input", 0)
+        output_tokens = tokens.get("output", 0)
+
+        self.session.total_cost += cost
+        self.session.total_input_tokens += input_tokens
+        self.session.total_output_tokens += output_tokens
+        self.session.total_tokens += input_tokens + output_tokens
+
         msg_data = MessageData(
             message_index=message_index,
             timestamp=datetime.now(),
@@ -194,6 +210,12 @@ class MlflowTracer:
 
         if self.session.total_time_seconds is not None:
             mlflow.log_metric("total_time_seconds", self.session.total_time_seconds)
+
+        # Log accumulated cost and token metrics
+        mlflow.log_metric("total_cost", self.session.total_cost)
+        mlflow.log_metric("total_input_tokens", self.session.total_input_tokens)
+        mlflow.log_metric("total_output_tokens", self.session.total_output_tokens)
+        mlflow.log_metric("total_tokens", self.session.total_tokens)
 
         if self.session.error:
             mlflow.log_metric("has_error", 1)

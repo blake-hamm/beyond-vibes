@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: str | None = None
     mlflow_tracking_username: str | None = None
     mlflow_tracking_password: str | None = None
+    mlflow_enable_system_metrics_logging: bool = True
 
     @field_validator("log_level", mode="before")
     @classmethod

@@ -1,6 +1,6 @@
 bucket: beyond-vibes
 models:
-  - name: kimi-k2
+  - name: kimi-k2.5
     provider: opencode
   - name: minimax-m2.5
     provider: opencode-go
