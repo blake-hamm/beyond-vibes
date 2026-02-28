@@ -1,5 +1,6 @@
 """MLflow tracing integration for simulation runs."""
 
+import json
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ from typing import Any, Generator
 
 import mlflow
 from mlflow.entities.span import SpanType
+from mlflow.entities.span_event import SpanEvent
 
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.models import SimulationConfig
@@ -50,6 +52,7 @@ class SimulationSession:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_tokens: int = 0
+    tool_latency_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 class MlflowTracer:
@@ -122,32 +125,66 @@ class MlflowTracer:
             raise
 
     def log_message(self, message: dict) -> None:
-        """Log a raw message as a span in the trace with accurate timestamps."""
+        """Log a raw message as a span in the trace with accurate timestamps.
+
+        Creates a parent span for the message and child spans for each tool call,
+        with proper error handling and latency tracking.
+        """
         if self.session is None:
             logger.warning("No active session to log message to")
             return
 
         message_index = len(self.session.messages)
 
-        # Extract timestamps from message metadata (milliseconds -> nanoseconds)
+        # Extract timestamps from message metadata using helper
         time_info = message.get("info", {}).get("time", {})
-        created_ms = time_info.get("created")
-        completed_ms = time_info.get("completed")
+        parent_start_ns, parent_end_ns = self._extract_timestamps_ns(
+            time_info, "created", "completed"
+        )
 
-        # Convert milliseconds to nanoseconds for MLflow
-        start_time_ns = int(created_ms * 1_000_000)
-        end_time_ns = int(completed_ms * 1_000_000)
-
-        # Create independent span with session_id in metadata
-        # Each span is its own root trace, but shares the session_id
-        span = mlflow.start_span_no_context(
+        # Create parent span with session_id in metadata
+        parent_span = mlflow.start_span_no_context(
             name=f"message_{message_index}",
             span_type=SpanType.AGENT,
-            start_time_ns=start_time_ns,
+            start_time_ns=parent_start_ns,
             metadata={"mlflow.trace.session": self.session.session_id},
         )
 
-        span.set_inputs(
+        # Extract readable content from message parts
+        readable_parts = []
+        has_tool_error = False
+
+        # Process message parts and create tool child spans
+        parts = message.get("parts", [])
+        for part in parts:
+            part_type = part.get("type", "")
+
+            # Collect readable content (text and reasoning)
+            if part_type == "text":
+                text = part.get("text", "")
+                if text:
+                    readable_parts.append({"type": "text", "content": text})
+            elif part_type == "reasoning":
+                text = part.get("text", "")
+                if text:
+                    readable_parts.append({"type": "reasoning", "content": text})
+
+            # Create child spans for tool calls
+            elif part_type == "tool":
+                self._create_tool_child_span(
+                    parent_span,
+                    part,
+                    parent_start_ns,
+                    parent_end_ns,
+                )
+
+                # Check for tool errors
+                state = part.get("state", {})
+                if state.get("status") == "error":
+                    has_tool_error = True
+
+        # Set parent span inputs
+        parent_span.set_inputs(
             {
                 "message_index": message_index,
                 "message_id": message.get("info", {}).get("id", ""),
@@ -155,7 +192,8 @@ class MlflowTracer:
             }
         )
 
-        span.set_outputs({"raw_message": message})
+        # Set readable outputs (assistant text and reasoning only)
+        parent_span.set_outputs({"content": readable_parts})
 
         # Set turn-specific configuration attributes
         info = message.get("info", {})
@@ -165,7 +203,7 @@ class MlflowTracer:
         output_tokens = tokens.get("output", 0)
         total_tokens = input_tokens + output_tokens
 
-        span.set_attributes(
+        parent_span.set_attributes(
             {
                 "llm.token_usage.input_tokens": input_tokens,
                 "llm.token_usage.output_tokens": output_tokens,
@@ -176,8 +214,15 @@ class MlflowTracer:
             }
         )
 
-        # End span with custom timestamp
-        span.end(end_time_ns=end_time_ns)
+        # Propagate tool errors to parent span
+        if has_tool_error:
+            parent_span.set_status("ERROR")
+
+        # Store raw message as attribute
+        parent_span.set_attributes({"raw_message_json": json.dumps(message)})
+
+        # End parent span with custom timestamp
+        parent_span.end(end_time_ns=parent_end_ns)
 
         # Accumulate cost and token totals from message info
         self.session.total_cost += cost
@@ -185,12 +230,137 @@ class MlflowTracer:
         self.session.total_output_tokens += output_tokens
         self.session.total_tokens += total_tokens
 
-        msg_data = MessageData(
-            message_index=message_index,
-            timestamp=datetime.now(),
-            raw_message=message,
+    def _extract_timestamps_ns(
+        self,
+        time_info: dict,
+        start_key: str,
+        end_key: str,
+        fallback_start_ns: int | None = None,
+        fallback_end_ns: int | None = None,
+    ) -> tuple[int | None, int | None]:
+        """Extract timestamps from time info and convert ms to ns with fallbacks."""
+        start_ms = time_info.get(start_key)
+        end_ms = time_info.get(end_key)
+
+        start_ns = (
+            int(start_ms * 1_000_000) if start_ms is not None else fallback_start_ns
         )
-        self.session.messages.append(msg_data)
+        end_ns = int(end_ms * 1_000_000) if end_ms is not None else fallback_end_ns
+
+        return start_ns, end_ns
+
+    def _handle_tool_errors(
+        self,
+        child_span: Any,  # noqa: ANN401
+        state: dict,
+        tool_name: str,
+        call_id: str,
+        tool_output: Any,  # noqa: ANN401
+    ) -> None:
+        """Check for tool errors and add exception event if found."""
+        status = state.get("status", "")
+        metadata = state.get("metadata", {})
+        exit_code = metadata.get("exit", 0)
+
+        is_explicit_error = status == "error"
+        is_nonzero_exit = exit_code > 0
+
+        if not is_explicit_error and not is_nonzero_exit:
+            return
+
+        child_span.set_status("ERROR")
+
+        if is_explicit_error:
+            error_type = "execution_error"
+            error_message = state.get("error", "")
+            if not error_message:
+                error_message = tool_output if tool_output else "Tool execution failed"
+        else:
+            error_type = "non_zero_exit"
+            error_message = (
+                tool_output if tool_output else f"Command exited with code {exit_code}"
+            )
+
+        event_attributes = {
+            "error.message": error_message,
+            "error.type": error_type,
+            "tool.name": tool_name,
+            "tool.call_id": call_id,
+            "tool.status": status,
+        }
+
+        if exit_code > 0:
+            event_attributes["tool.exit_code"] = exit_code
+
+        if "error_code" in state:
+            event_attributes["error.code"] = state["error_code"]
+
+        child_span.add_event(SpanEvent("exception", attributes=event_attributes))
+
+    def _create_tool_child_span(
+        self,
+        parent_span: Any,  # noqa: ANN401
+        part: dict,
+        parent_start_ns: int | None,
+        parent_end_ns: int | None,
+    ) -> None:
+        """Create a child span for a tool call with latency and error tracking."""
+        tool_name = part.get("tool", "unknown")
+        call_id = part.get("callID", "")
+        state = part.get("state", {})
+        span_name = f"tool:{tool_name}:{call_id}"
+
+        # Extract timestamps with fallbacks to parent span times
+        time_info = state.get("time", {})
+        child_start_ns, child_end_ns = self._extract_timestamps_ns(
+            time_info, "start", "end", parent_start_ns, parent_end_ns
+        )
+
+        # Create child span with explicit parent and timestamp control
+        tool_input = state.get("input", {})
+        child_span = mlflow.start_span_no_context(
+            name=span_name,
+            span_type=SpanType.TOOL,
+            parent_span=parent_span,
+            inputs={"tool": tool_name, "call_id": call_id, "input": tool_input},
+            start_time_ns=child_start_ns,
+        )
+
+        tool_output = state.get("output")
+        if tool_output is not None:
+            child_span.set_outputs({"output": tool_output})
+
+        # Handle errors and track latency
+        self._handle_tool_errors(child_span, state, tool_name, call_id, tool_output)
+
+        if child_start_ns is not None and child_end_ns is not None:
+            latency_ms = (child_end_ns - child_start_ns) / 1_000_000
+            self._accumulate_tool_latency(tool_name, latency_ms)
+
+        child_span.end(end_time_ns=child_end_ns)
+
+    def _accumulate_tool_latency(self, tool_name: str, latency_ms: float) -> None:
+        """Accumulate latency metrics for a tool call.
+
+        Args:
+            tool_name: Name of the tool
+            latency_ms: Latency in milliseconds
+
+        """
+        if self.session is None:
+            return
+
+        if tool_name not in self.session.tool_latency_metrics:
+            self.session.tool_latency_metrics[tool_name] = {
+                "sum": 0.0,
+                "count": 0,
+                "max": 0.0,
+            }
+
+        metrics = self.session.tool_latency_metrics[tool_name]
+        metrics["sum"] += latency_ms
+        metrics["count"] += 1
+        metrics["max"] = max(metrics["max"], latency_ms)
 
     def log_git_diff(self, diff_content: str) -> None:
         """Log git diff as an artifact."""
@@ -234,6 +404,16 @@ class MlflowTracer:
 
         if self.session.error:
             mlflow.log_metric("has_error", 1)
+
+        # Log tool latency metrics
+        for tool_name, metrics in self.session.tool_latency_metrics.items():
+            prefix = f"tool_latency_ms.{tool_name}"
+            mlflow.log_metric(f"{prefix}.sum", metrics["sum"])
+            mlflow.log_metric(f"{prefix}.count", metrics["count"])
+            mlflow.log_metric(f"{prefix}.max", metrics["max"])
+            if metrics["count"] > 0:
+                avg = metrics["sum"] / metrics["count"]
+                mlflow.log_metric(f"{prefix}.avg", avg)
 
         if self.session.git_diff:
             mlflow.log_text(self.session.git_diff, "git_diff.patch")
