@@ -1,11 +1,11 @@
 """Download utilities for fetching model artifacts from HuggingFace to S3."""
 
-from beyond_vibes.model_downloader.hf import HFClient
-from beyond_vibes.model_downloader.models import (
+from beyond_vibes.model_config import (
     ESSENTIAL_MODEL_CONFIGS,
     Config,
     ModelConfig,
 )
+from beyond_vibes.model_downloader.hf import HFClient
 from beyond_vibes.model_downloader.s3 import S3Client
 
 __all__ = [

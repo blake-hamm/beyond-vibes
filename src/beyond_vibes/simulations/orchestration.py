@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Generator
 
-from beyond_vibes.model_downloader.models import ModelConfig
+from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations.mlflow import MlflowTracer
 from beyond_vibes.simulations.models import SimulationConfig
@@ -125,7 +125,7 @@ def _run_simulation(
                 repo_url=sim_config.repository.url,
                 branch=sim_config.repository.branch,
                 prompt=prompt,
-                model_id=model_config.name,
+                model_id=model_config.get_model_id(),
                 agent=sim_config.agent,
                 max_turns=sim_config.max_turns,
             ):

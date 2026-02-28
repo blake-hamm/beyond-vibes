@@ -8,7 +8,7 @@ from typing import Any, Generator
 
 import mlflow
 
-from beyond_vibes.model_downloader.models import ModelConfig
+from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.models import SimulationConfig
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,10 @@ class MlflowTracer:
                 try:
                     # Parameters (performance analysis)
                     mlflow.log_param("model.name", model_config.name)
-                    mlflow.log_param("model.repo_id", model_config.repo_id)
+                    mlflow.log_param("model.provider", model_config.provider)
+                    mlflow.log_param("model.model_id", model_config.get_model_id())
+                    if model_config.repo_id:
+                        mlflow.log_param("model.repo_id", model_config.repo_id)
                     if self.quant_tag:
                         mlflow.log_param("model.quant", self.quant_tag)
                     if self.container_tag:

@@ -13,7 +13,8 @@ prompt: |
   You are an expert QA Engineer. Ensure 80% or higher unit test coverage.
 
   Requirements:
-  - Use pytest
+  - This project uses nix and poetry
+  - Use pytest in dev dependency group
   - Use shared fixtures in conftest.py
 
   Steps:
