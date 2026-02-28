@@ -120,37 +120,45 @@ class MlflowTracer:
             raise
 
     def log_message(self, message: dict) -> None:
-        """Log a raw message as a span in the trace.
-
-        Args:
-            message: Raw message dictionary from the OpenCode session.
-
-        """
+        """Log a raw message as a span in the trace with accurate timestamps."""
         if self.session is None:
             logger.warning("No active session to log message to")
             return
 
         message_index = len(self.session.messages)
 
+        # Extract timestamps from message metadata (milliseconds -> nanoseconds)
+        time_info = message.get("info", {}).get("time", {})
+        created_ms = time_info.get("created")
+        completed_ms = time_info.get("completed")
+
         try:
-            with mlflow.start_span(name=f"message_{message_index}") as span:
-                span.set_inputs(
-                    {
-                        "message_index": message_index,
-                        "message_id": message.get("info", {}).get("id", ""),
-                        "role": message.get("info", {}).get("role", ""),
-                    }
-                )
+            # Convert milliseconds to nanoseconds for MLflow
+            start_time_ns = int(created_ms * 1_000_000)
+            end_time_ns = int(completed_ms * 1_000_000)
 
-                span.set_outputs(
-                    {
-                        "raw_message": message,
-                    }
-                )
+            # Use start_span_no_context to set custom timestamps
+            span = mlflow.start_span_no_context(
+                name=f"message_{message_index}",
+                start_time_ns=start_time_ns,
+            )
 
-                mlflow.update_current_trace(
-                    metadata={"mlflow.trace.session": self.session.session_id}
-                )
+            span.set_inputs(
+                {
+                    "message_index": message_index,
+                    "message_id": message.get("info", {}).get("id", ""),
+                    "role": message.get("info", {}).get("role", ""),
+                }
+            )
+
+            span.set_outputs({"raw_message": message})
+
+            # End span with custom timestamp
+            span.end(end_time_ns=end_time_ns)
+
+            mlflow.update_current_trace(
+                metadata={"mlflow.trace.session": self.session.session_id}
+            )
 
         except Exception as e:
             logger.warning("Failed to log message as span: %s", e)
