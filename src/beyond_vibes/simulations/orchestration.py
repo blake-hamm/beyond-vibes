@@ -20,12 +20,12 @@ class SimulationOrchestrator:
     def __init__(
         self,
         opencode_client: OpenCodeClient,
-        sim_logger: MlflowTracer,
+        tracer: MlflowTracer,
         sandbox_manager: SandboxManager,
     ) -> None:
         """Initialize the orchestrator."""
         self.opencode = opencode_client
-        self.logger = sim_logger
+        self.tracer = tracer
         self.sandbox = sandbox_manager
         self._seen_message_ids: set[str] = set()
         self._assistant_message_count: int = 0
@@ -60,13 +60,26 @@ class SimulationOrchestrator:
 
                 for msg in messages:
                     msg_id = msg.get("info", {}).get("id", "")
-                    if msg_id not in self._seen_message_ids:
-                        logger.debug("Yielding new message id=%s", msg_id)
+                    # Only yield messages with completed timestamp
+                    is_complete = (
+                        msg.get("info", {}).get("time", {}).get("completed") is not None
+                    )
+                    if msg_id not in self._seen_message_ids and is_complete:
+                        logger.debug("Yielding completed message id=%s", msg_id)
                         yield msg
                         self._seen_message_ids.add(msg_id)
                         # Count assistant messages
                         if msg.get("info", {}).get("role") == "assistant":
                             self._assistant_message_count += 1
+                            # Check if this message signals completion
+                            if msg.get("info", {}).get("finish") == "stop":
+                                logger.info(
+                                    "Stop signal in msg %s, ending session %s",
+                                    msg_id,
+                                    session_id,
+                                )
+                                self.opencode.abort_session(session_id)
+                                return
 
                 # Check if max turns exceeded
                 if self._assistant_message_count >= max_turns:
@@ -78,35 +91,7 @@ class SimulationOrchestrator:
                     self.opencode.abort_session(session_id)
                     break
 
-                # Check if simulation is complete
-                if self._is_complete(messages):
-                    logger.info("Simulation completed, aborting session %s", session_id)
-                    self.opencode.abort_session(session_id)
-                    break
-
                 time.sleep(5)
-
-    def _is_complete(self, messages: list[dict]) -> bool:
-        """Check if the simulation is complete.
-
-        Args:
-            messages: List of messages from the session.
-
-        Returns:
-            True if the latest assistant message has finish="stop".
-
-        """
-        assistant_messages = [
-            m for m in messages if m.get("info", {}).get("role") == "assistant"
-        ]
-
-        if not assistant_messages:
-            return False
-
-        # API returns messages in reverse chronological order (newest first)
-        latest = assistant_messages[0]
-        finish = latest.get("info", {}).get("finish")
-        return finish == "stop"
 
 
 def _run_simulation(
@@ -114,19 +99,19 @@ def _run_simulation(
     model_config: ModelConfig,
     sandbox: SandboxManager,
     opencode_client: OpenCodeClient,
-    sim_logger: MlflowTracer,
+    tracer: MlflowTracer,
 ) -> bool:
     """Execute the simulation and return True if error occurred."""
     error_occurred = False
     try:
-        with sim_logger.log_simulation(sim_config, model_config) as logger_ctx:
+        with tracer.log_simulation(sim_config, model_config) as logger_ctx:
             prompt = sim_config.prompt
             if settings.system_prompt:
                 prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
             if sim_config.system_prompt:
                 prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
 
-            orchestrator = SimulationOrchestrator(opencode_client, sim_logger, sandbox)
+            orchestrator = SimulationOrchestrator(opencode_client, tracer, sandbox)
 
             for message in orchestrator.run(
                 repo_url=sim_config.repository.url,
@@ -143,7 +128,7 @@ def _run_simulation(
     except Exception as e:
         logger.error("Simulation failed: %s", e)
         error_occurred = True
-        if sim_logger.session:
-            sim_logger.log_error(str(e))
+        if tracer.session:
+            tracer.log_error(str(e))
 
     return error_occurred

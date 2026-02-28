@@ -54,12 +54,14 @@ class MlflowTracer:
         self,
         experiment_name: str = "beyond-vibes",
         quant_tag: str | None = None,
+        container_tag: str | None = None,
     ) -> None:
         """Initialize simulation logger with MLflow tracing."""
         self.experiment_name = experiment_name
         self.run_id: str | None = None
         self.session: SimulationSession | None = None
         self.quant_tag = quant_tag
+        self.container_tag = container_tag
 
     @contextmanager
     def log_simulation(
@@ -90,16 +92,19 @@ class MlflowTracer:
                 )
 
                 try:
-                    mlflow.set_tag("simulation.task", sim_config.name)
-                    mlflow.set_tag("simulation.archetype", sim_config.archetype)
-                    mlflow.set_tag("simulation.repo_url", sim_config.repository.url)
-                    mlflow.set_tag(
-                        "simulation.repo_branch", sim_config.repository.branch
-                    )
-                    mlflow.set_tag("model.name", model_config.name)
-                    mlflow.set_tag("model.repo_id", model_config.repo_id)
+                    # Parameters (performance analysis)
+                    mlflow.log_param("model.name", model_config.name)
+                    mlflow.log_param("model.repo_id", model_config.repo_id)
                     if self.quant_tag:
-                        mlflow.set_tag("model.quant_tag", self.quant_tag)
+                        mlflow.log_param("model.quant", self.quant_tag)
+                    if self.container_tag:
+                        mlflow.log_param("runtime.container", self.container_tag)
+
+                    # Tags (filtering)
+                    mlflow.set_tag("task.name", sim_config.name)
+                    mlflow.set_tag("task.archetype", sim_config.archetype)
+                    mlflow.set_tag("repository.url", sim_config.repository.url)
+                    mlflow.set_tag("repository.branch", sim_config.repository.branch)
                 except Exception as e:
                     logger.warning("Failed to set tags: %s", e)
 
