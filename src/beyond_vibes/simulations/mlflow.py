@@ -52,7 +52,7 @@ class SimulationSession:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_tokens: int = 0
-    tool_latency_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
+    tool_call_counts: dict[str, int] = field(default_factory=dict)
 
 
 class MlflowTracer:
@@ -230,6 +230,14 @@ class MlflowTracer:
         self.session.total_output_tokens += output_tokens
         self.session.total_tokens += total_tokens
 
+        # Append message data to session
+        message_data = MessageData(
+            message_index=message_index,
+            timestamp=datetime.now(),
+            raw_message=message,
+        )
+        self.session.messages.append(message_data)
+
     def _extract_timestamps_ns(
         self,
         time_info: dict,
@@ -330,37 +338,26 @@ class MlflowTracer:
         if tool_output is not None:
             child_span.set_outputs({"output": tool_output})
 
-        # Handle errors and track latency
+        # Handle errors and track tool call count
         self._handle_tool_errors(child_span, state, tool_name, call_id, tool_output)
-
-        if child_start_ns is not None and child_end_ns is not None:
-            latency_ms = (child_end_ns - child_start_ns) / 1_000_000
-            self._accumulate_tool_latency(tool_name, latency_ms)
+        self._accumulate_tool_call(tool_name)
 
         child_span.end(end_time_ns=child_end_ns)
 
-    def _accumulate_tool_latency(self, tool_name: str, latency_ms: float) -> None:
-        """Accumulate latency metrics for a tool call.
+    def _accumulate_tool_call(self, tool_name: str) -> None:
+        """Increment tool call count for a tool.
 
         Args:
             tool_name: Name of the tool
-            latency_ms: Latency in milliseconds
 
         """
         if self.session is None:
             return
 
-        if tool_name not in self.session.tool_latency_metrics:
-            self.session.tool_latency_metrics[tool_name] = {
-                "sum": 0.0,
-                "count": 0,
-                "max": 0.0,
-            }
+        if tool_name not in self.session.tool_call_counts:
+            self.session.tool_call_counts[tool_name] = 0
 
-        metrics = self.session.tool_latency_metrics[tool_name]
-        metrics["sum"] += latency_ms
-        metrics["count"] += 1
-        metrics["max"] = max(metrics["max"], latency_ms)
+        self.session.tool_call_counts[tool_name] += 1
 
     def log_git_diff(self, diff_content: str) -> None:
         """Log git diff as an artifact."""
@@ -405,15 +402,12 @@ class MlflowTracer:
         if self.session.error:
             mlflow.log_metric("has_error", 1)
 
-        # Log tool latency metrics
-        for tool_name, metrics in self.session.tool_latency_metrics.items():
-            prefix = f"tool_latency_ms.{tool_name}"
-            mlflow.log_metric(f"{prefix}.sum", metrics["sum"])
-            mlflow.log_metric(f"{prefix}.count", metrics["count"])
-            mlflow.log_metric(f"{prefix}.max", metrics["max"])
-            if metrics["count"] > 0:
-                avg = metrics["sum"] / metrics["count"]
-                mlflow.log_metric(f"{prefix}.avg", avg)
+        # Log tool call counts per tool and total
+        total_tool_calls = 0
+        for tool_name, count in self.session.tool_call_counts.items():
+            mlflow.log_metric(f"tool_calls.{tool_name}", count)
+            total_tool_calls += count
+        mlflow.log_metric("total_tool_calls", total_tool_calls)
 
         if self.session.git_diff:
             mlflow.log_text(self.session.git_diff, "git_diff.patch")
