@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Generator
 
 import mlflow
+from mlflow.entities.span import SpanType
 
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.models import SimulationConfig
@@ -141,6 +142,7 @@ class MlflowTracer:
         # Each span is its own root trace, but shares the session_id
         span = mlflow.start_span_no_context(
             name=f"message_{message_index}",
+            span_type=SpanType.AGENT,
             start_time_ns=start_time_ns,
             metadata={"mlflow.trace.session": self.session.session_id},
         )
@@ -155,20 +157,33 @@ class MlflowTracer:
 
         span.set_outputs({"raw_message": message})
 
-        # End span with custom timestamp
-        span.end(end_time_ns=end_time_ns)
-
-        # Accumulate cost and token totals from message info
+        # Set turn-specific configuration attributes
         info = message.get("info", {})
         cost = info.get("cost", 0.0)
         tokens = info.get("tokens", {})
         input_tokens = tokens.get("input", 0)
         output_tokens = tokens.get("output", 0)
+        total_tokens = input_tokens + output_tokens
 
+        span.set_attributes(
+            {
+                "llm.token_usage.input_tokens": input_tokens,
+                "llm.token_usage.output_tokens": output_tokens,
+                "llm.token_usage.total_tokens": total_tokens,
+                "modelID": self.session.model_config.get_model_id(),
+                "providerID": self.session.model_config.provider,
+                "cost": cost,
+            }
+        )
+
+        # End span with custom timestamp
+        span.end(end_time_ns=end_time_ns)
+
+        # Accumulate cost and token totals from message info
         self.session.total_cost += cost
         self.session.total_input_tokens += input_tokens
         self.session.total_output_tokens += output_tokens
-        self.session.total_tokens += input_tokens + output_tokens
+        self.session.total_tokens += total_tokens
 
         msg_data = MessageData(
             message_index=message_index,
