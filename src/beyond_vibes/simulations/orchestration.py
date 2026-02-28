@@ -5,10 +5,10 @@ import time
 from typing import Generator
 
 from beyond_vibes.model_downloader.models import ModelConfig
-from beyond_vibes.opencode_client import OpenCodeClient
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations.mlflow import MlflowTracer
 from beyond_vibes.simulations.models import SimulationConfig
+from beyond_vibes.simulations.opencode import OpenCodeClient
 from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class SimulationOrchestrator:
         self.sandbox = sandbox_manager
         self._seen_message_ids: set[str] = set()
         self._assistant_message_count: int = 0
+        self._session_id: str | None = None
 
     def run(  # noqa: PLR0913
         self,
@@ -46,52 +47,59 @@ class SimulationOrchestrator:
 
             logger.info("Running simulation in %s", working_dir)
 
-            session_id = self.opencode.create_session(working_dir)
-            self.opencode.send_prompt(session_id, prompt, model_id, agent)
+            self._session_id = self.opencode.create_session(working_dir)
+            self.opencode.send_prompt(self._session_id, prompt, model_id, agent)
 
-            while True:
-                messages = self.opencode.get_messages(session_id)
+            try:
+                while True:
+                    messages = self.opencode.get_messages(self._session_id)
 
-                logger.debug(
-                    "Got %d messages, seen=%d",
-                    len(messages),
-                    len(self._seen_message_ids),
-                )
-
-                for msg in messages:
-                    msg_id = msg.get("info", {}).get("id", "")
-                    # Only yield messages with completed timestamp
-                    is_complete = (
-                        msg.get("info", {}).get("time", {}).get("completed") is not None
+                    logger.debug(
+                        "Got %d messages, seen=%d",
+                        len(messages),
+                        len(self._seen_message_ids),
                     )
-                    if msg_id not in self._seen_message_ids and is_complete:
-                        logger.debug("Yielding completed message id=%s", msg_id)
-                        yield msg
-                        self._seen_message_ids.add(msg_id)
-                        # Count assistant messages
-                        if msg.get("info", {}).get("role") == "assistant":
-                            self._assistant_message_count += 1
-                            # Check if this message signals completion
-                            if msg.get("info", {}).get("finish") == "stop":
-                                logger.info(
-                                    "Stop signal in msg %s, ending session %s",
-                                    msg_id,
-                                    session_id,
-                                )
-                                self.opencode.abort_session(session_id)
-                                return
 
-                # Check if max turns exceeded
-                if self._assistant_message_count >= max_turns:
-                    logger.warning(
-                        "Max turns (%d) reached, aborting session %s",
-                        max_turns,
-                        session_id,
-                    )
-                    self.opencode.abort_session(session_id)
-                    break
+                    for msg in messages:
+                        msg_id = msg.get("info", {}).get("id", "")
+                        # Only yield messages with completed timestamp
+                        is_complete = (
+                            msg.get("info", {}).get("time", {}).get("completed")
+                            is not None
+                        )
+                        if msg_id not in self._seen_message_ids and is_complete:
+                            logger.debug("Yielding completed message id=%s", msg_id)
+                            yield msg
+                            self._seen_message_ids.add(msg_id)
+                            # Count assistant messages
+                            if msg.get("info", {}).get("role") == "assistant":
+                                self._assistant_message_count += 1
+                                # Check if this message signals completion
+                                if msg.get("info", {}).get("finish") == "stop":
+                                    logger.info(
+                                        "Stop signal in msg %s, ending session %s",
+                                        msg_id,
+                                        self._session_id,
+                                    )
+                                    self.opencode.abort_session(self._session_id)
+                                    return
 
-                time.sleep(5)
+                    # Check if max turns exceeded
+                    if self._assistant_message_count >= max_turns:
+                        logger.warning(
+                            "Max turns (%d) reached, aborting session %s",
+                            max_turns,
+                            self._session_id,
+                        )
+                        self.opencode.abort_session(self._session_id)
+                        break
+
+                    time.sleep(5)
+            except Exception:
+                logger.exception("Simulation interrupted, aborting session")
+                if self._session_id:
+                    self.opencode.abort_session(self._session_id)
+                raise
 
 
 def _run_simulation(

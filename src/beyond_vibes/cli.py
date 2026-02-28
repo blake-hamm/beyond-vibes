@@ -8,10 +8,10 @@ import typer
 import yaml
 
 from beyond_vibes.model_downloader import Config, HFClient, ModelConfig, S3Client
-from beyond_vibes.opencode_client import OpenCodeClient
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations import SimulationLogger
 from beyond_vibes.simulations.models import SimulationConfig
+from beyond_vibes.simulations.opencode import OpenCodeClient
 from beyond_vibes.simulations.orchestration import _run_simulation
 from beyond_vibes.simulations.prompts.loader import load_prompt
 from beyond_vibes.simulations.sandbox import SandboxManager
@@ -108,12 +108,13 @@ def simulate(
     )
 
     sandbox = SandboxManager()
-    opencode_client = OpenCodeClient()
-    sim_logger = SimulationLogger(quant_tag=quant_tag)
 
-    error_occurred = _run_simulation(
-        sim_config, model_config, sandbox, opencode_client, sim_logger
-    )
+    with OpenCodeClient() as opencode_client:
+        sim_logger = SimulationLogger(quant_tag=quant_tag)
+
+        error_occurred = _run_simulation(
+            sim_config, model_config, sandbox, opencode_client, sim_logger
+        )
 
     sandbox.cleanup()
     logger.info("Sandbox cleaned up")

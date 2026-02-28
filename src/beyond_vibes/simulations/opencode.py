@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Self
 
 import httpx
 
@@ -84,3 +85,11 @@ class OpenCodeClient:
     def close(self) -> None:
         """Close the HTTP client."""
         self._client.close()
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        """Exit context manager, closing the HTTP client."""
+        self.close()
