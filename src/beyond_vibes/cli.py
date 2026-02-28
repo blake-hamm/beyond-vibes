@@ -12,8 +12,8 @@ from beyond_vibes.settings import settings
 from beyond_vibes.simulations import SimulationLogger
 from beyond_vibes.simulations.models import SimulationConfig
 from beyond_vibes.simulations.opencode import OpenCodeClient
-from beyond_vibes.simulations.orchestration import _run_simulation
-from beyond_vibes.simulations.prompts.loader import load_prompt
+from beyond_vibes.simulations.orchestration import run_simulation
+from beyond_vibes.simulations.prompts.loader import build_prompt, load_prompt
 from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,7 @@ def simulate(  # noqa: PLR0913
 ) -> None:
     """Run a simulation by cloning a repo and executing a prompt via OpenCode."""
     sim_config = _load_task_config(task, prompt_vars)
+    prompt = build_prompt(sim_config)
 
     # Validate that at least one of model or provider is specified
     if model is None and provider is None:
@@ -135,8 +136,8 @@ def simulate(  # noqa: PLR0913
         with OpenCodeClient() as opencode_client:
             sim_logger = SimulationLogger(quant_tag=quant_tag)
 
-            model_error = _run_simulation(
-                sim_config, model_config, sandbox, opencode_client, sim_logger
+            model_error = run_simulation(
+                sim_config, model_config, sandbox, opencode_client, sim_logger, prompt
             )
             error_occurred = error_occurred or model_error
 

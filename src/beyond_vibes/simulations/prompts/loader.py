@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from beyond_vibes.settings import settings
 from beyond_vibes.simulations.models import SimulationConfig
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,19 @@ def load_prompt(
 
     logger.debug("Loaded prompt '%s' from %s", config.name, path)
     return config
+
+
+def build_prompt(sim_config: SimulationConfig) -> str:
+    """Build final prompt by prepending system prompts to task prompt."""
+    prompt = sim_config.prompt
+
+    if settings.system_prompt:
+        prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
+
+    if sim_config.system_prompt:
+        prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
+
+    return prompt
 
 
 def list_prompts(prompts_dir: Path) -> list[Path]:

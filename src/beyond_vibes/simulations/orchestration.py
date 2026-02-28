@@ -5,7 +5,6 @@ import time
 from typing import Generator
 
 from beyond_vibes.model_config import ModelConfig
-from beyond_vibes.settings import settings
 from beyond_vibes.simulations.mlflow import MlflowTracer
 from beyond_vibes.simulations.models import SimulationConfig
 from beyond_vibes.simulations.opencode import OpenCodeClient
@@ -105,23 +104,18 @@ class SimulationOrchestrator:
                 raise
 
 
-def _run_simulation(
+def run_simulation(  # noqa: PLR0913
     sim_config: SimulationConfig,
     model_config: ModelConfig,
     sandbox: SandboxManager,
     opencode_client: OpenCodeClient,
     tracer: MlflowTracer,
+    prompt: str,
 ) -> bool:
     """Execute the simulation and return True if error occurred."""
     error_occurred = False
     try:
         with tracer.log_simulation(sim_config, model_config) as logger_ctx:
-            prompt = sim_config.prompt
-            if settings.system_prompt:
-                prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
-            if sim_config.system_prompt:
-                prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
-
             orchestrator = SimulationOrchestrator(opencode_client, tracer, sandbox)
 
             for message in orchestrator.run(
