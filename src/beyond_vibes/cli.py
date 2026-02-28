@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 
 from beyond_vibes.model_config import (
-    get_models_by_filter,
+    get_model_by_name,
     load_models_config,
 )
 from beyond_vibes.model_downloader import HFClient, S3Client
@@ -95,11 +95,11 @@ def download(
 @app.command()
 def simulate(  # noqa: PLR0913
     task: str = typer.Option(..., "--task", help="Task name (without .yaml)"),
-    model: str | None = typer.Option(
-        None, "--model", help="Model name from models.yaml"
-    ),
+    model: str = typer.Option(..., "--model", help="Model name from models.yaml"),
     provider: str | None = typer.Option(
-        None, "--provider", help="Filter by provider (e.g., local, openai)"
+        None,
+        "--provider",
+        help="Provider filter when multiple models have the same name",
     ),
     config_path: Path | None = Path(DEFAULT_CONFIG),
     prompt_vars: str = typer.Option(
@@ -123,39 +123,30 @@ def simulate(  # noqa: PLR0913
 
     prompt = build_prompt(sim_config)
 
-    # Validate that at least one of model or provider is specified
-    if model is None and provider is None:
-        logger.error("Must specify either --model or --provider")
-        raise typer.Exit(code=1)
-
-    # Get models to run
+    # Get the single model to run (optionally filtered by provider)
     try:
-        models_to_run = get_models_by_filter(model, provider, config_path)
+        model_config = get_model_by_name(model, provider, config_path)
     except ValueError as e:
         logger.error(str(e))
         raise typer.Exit(code=1) from None
 
-    # Run simulation for each model
-    error_occurred = False
-    for model_config in models_to_run:
-        logger.info(f"Running simulation with model: {model_config.name}")
+    logger.info(f"Running simulation with model: {model_config.name}")
 
-        quant_tag = quant or (
-            model_config.quant_tags[0] if model_config.quant_tags else None
+    quant_tag = quant or (
+        model_config.quant_tags[0] if model_config.quant_tags else None
+    )
+
+    sandbox = SandboxManager()
+
+    with OpenCodeClient() as opencode_client:
+        sim_logger = SimulationLogger(quant_tag=quant_tag)
+
+        error_occurred = run_simulation(
+            sim_config, model_config, sandbox, opencode_client, sim_logger, prompt
         )
 
-        sandbox = SandboxManager()
-
-        with OpenCodeClient() as opencode_client:
-            sim_logger = SimulationLogger(quant_tag=quant_tag)
-
-            model_error = run_simulation(
-                sim_config, model_config, sandbox, opencode_client, sim_logger, prompt
-            )
-            error_occurred = error_occurred or model_error
-
-        sandbox.cleanup()
-        logger.info("Sandbox cleaned up")
+    sandbox.cleanup()
+    logger.info("Sandbox cleaned up")
 
     if error_occurred:
         raise typer.Exit(code=1)

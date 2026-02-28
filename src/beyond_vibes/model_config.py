@@ -65,11 +65,16 @@ def load_models_config(path: Path | None = None) -> Config:
     return Config(**config_data)
 
 
-def get_model_by_name(model_name: str, config_path: Path | None = None) -> ModelConfig:
+def get_model_by_name(
+    model_name: str,
+    provider: str | None = None,
+    config_path: Path | None = None,
+) -> ModelConfig:
     """Load a single model config by name from models.yaml.
 
     Args:
         model_name: Name of the model to find.
+        provider: Optional provider filter when multiple models have the same name.
         config_path: Path to the models.yaml file. Defaults to DEFAULT_CONFIG_PATH.
 
     Returns:
@@ -77,16 +82,33 @@ def get_model_by_name(model_name: str, config_path: Path | None = None) -> Model
 
     Raises:
         FileNotFoundError: If the config file doesn't exist.
-        ValueError: If the model is not found in the config.
+        ValueError: If the model is not found or if multiple models match
+            without provider filter.
 
     """
     config = load_models_config(config_path)
+    matches = []
 
     for model in config.models:
         if model.name == model_name:
-            return model
+            if provider is None or model.provider == provider:
+                matches.append(model)
 
-    raise ValueError(f"Model '{model_name}' not found in config")
+    if not matches:
+        if provider:
+            raise ValueError(
+                f"Model '{model_name}' with provider '{provider}' not found in config"
+            )
+        raise ValueError(f"Model '{model_name}' not found in config")
+
+    if len(matches) > 1:
+        providers = [m.provider for m in matches]
+        raise ValueError(
+            f"Multiple models named '{model_name}' found with providers: {providers}. "
+            f"Please specify --provider to select one."
+        )
+
+    return matches[0]
 
 
 def get_models_by_filter(
