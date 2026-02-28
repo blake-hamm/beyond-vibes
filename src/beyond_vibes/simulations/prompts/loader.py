@@ -1,5 +1,6 @@
 """Prompt loader for simulations."""
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -13,6 +14,8 @@ from beyond_vibes.simulations.models import SimulationConfig
 logger = logging.getLogger(__name__)
 
 TEMPLATE_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+
+DEFAULT_TASKS_DIR = Path(__file__).parent / "tasks"
 
 
 def render_template(template: str, variables: dict[str, Any]) -> str:
@@ -55,6 +58,31 @@ def load_prompt(
 
     logger.debug("Loaded prompt '%s' from %s", config.name, path)
     return config
+
+
+def load_task_config(
+    task: str,
+    prompt_vars: str = "{}",
+    tasks_dir: Path = DEFAULT_TASKS_DIR,
+) -> SimulationConfig:
+    """Load and parse task prompt configuration.
+
+    Args:
+        task: Task name (without .yaml extension).
+        prompt_vars: JSON string of variables to substitute in the prompt.
+        tasks_dir: Directory containing task YAML files.
+
+    Returns:
+        Parsed SimulationConfig.
+
+    Raises:
+        FileNotFoundError: If the task file doesn't exist.
+        ValueError: If the prompt_vars JSON is invalid or the config is invalid.
+
+    """
+    variables = json.loads(prompt_vars)
+    prompt_path = tasks_dir / f"{task}.yaml"
+    return load_prompt(prompt_path, variables)
 
 
 def build_prompt(sim_config: SimulationConfig) -> str:

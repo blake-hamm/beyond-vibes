@@ -63,3 +63,68 @@ def load_models_config(path: Path | None = None) -> Config:
 
     config_data = yaml.safe_load(path.read_text())
     return Config(**config_data)
+
+
+def get_model_by_name(model_name: str, config_path: Path | None = None) -> ModelConfig:
+    """Load a single model config by name from models.yaml.
+
+    Args:
+        model_name: Name of the model to find.
+        config_path: Path to the models.yaml file. Defaults to DEFAULT_CONFIG_PATH.
+
+    Returns:
+        The matching ModelConfig.
+
+    Raises:
+        FileNotFoundError: If the config file doesn't exist.
+        ValueError: If the model is not found in the config.
+
+    """
+    config = load_models_config(config_path)
+
+    for model in config.models:
+        if model.name == model_name:
+            return model
+
+    raise ValueError(f"Model '{model_name}' not found in config")
+
+
+def get_models_by_filter(
+    model_name: str | None = None,
+    provider: str | None = None,
+    config_path: Path | None = None,
+) -> list[ModelConfig]:
+    """Get list of models matching the specified filters.
+
+    Args:
+        model_name: Filter by exact model name. If None, all models match.
+        provider: Filter by provider name. If None, all providers match.
+        config_path: Path to the models.yaml file. Defaults to DEFAULT_CONFIG_PATH.
+
+    Returns:
+        List of matching ModelConfig objects.
+
+    Raises:
+        FileNotFoundError: If the config file doesn't exist.
+        ValueError: If no models match the filters.
+
+    """
+    config = load_models_config(config_path)
+    models = []
+
+    for model in config.models:
+        if model_name is not None and model.name != model_name:
+            continue
+        if provider is not None and model.provider != provider:
+            continue
+        models.append(model)
+
+    if not models:
+        filters = []
+        if model_name:
+            filters.append(f"model='{model_name}'")
+        if provider:
+            filters.append(f"provider='{provider}'")
+        raise ValueError(f"No models found matching filters: {', '.join(filters)}")
+
+    return models

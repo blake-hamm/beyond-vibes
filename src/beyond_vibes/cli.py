@@ -1,19 +1,20 @@
 """CLI for beyond vibes."""
 
-import json
 import logging
 from pathlib import Path
 
 import typer
 
-from beyond_vibes.model_config import ModelConfig, load_models_config
+from beyond_vibes.model_config import (
+    get_models_by_filter,
+    load_models_config,
+)
 from beyond_vibes.model_downloader import HFClient, S3Client
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations import SimulationLogger
-from beyond_vibes.simulations.models import SimulationConfig
 from beyond_vibes.simulations.opencode import OpenCodeClient
 from beyond_vibes.simulations.orchestration import run_simulation
-from beyond_vibes.simulations.prompts.loader import build_prompt, load_prompt
+from beyond_vibes.simulations.prompts.loader import build_prompt, load_task_config
 from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,15 @@ def simulate(  # noqa: PLR0913
     ),
 ) -> None:
     """Run a simulation by cloning a repo and executing a prompt via OpenCode."""
-    sim_config = _load_task_config(task, prompt_vars)
+    try:
+        sim_config = load_task_config(task, prompt_vars)
+    except FileNotFoundError:
+        logger.error(f"Task not found: {task}")
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        logger.error(f"Failed to load prompt: {e}")
+        raise typer.Exit(code=1) from None
+
     prompt = build_prompt(sim_config)
 
     # Validate that at least one of model or provider is specified
@@ -120,7 +129,11 @@ def simulate(  # noqa: PLR0913
         raise typer.Exit(code=1)
 
     # Get models to run
-    models_to_run = _get_models_to_run(model, provider, config_path)
+    try:
+        models_to_run = get_models_by_filter(model, provider, config_path)
+    except ValueError as e:
+        logger.error(str(e))
+        raise typer.Exit(code=1) from None
 
     # Run simulation for each model
     error_occurred = False
@@ -146,63 +159,6 @@ def simulate(  # noqa: PLR0913
 
     if error_occurred:
         raise typer.Exit(code=1)
-
-
-def _load_model_config(model: str, config_path: Path | None) -> ModelConfig:
-    """Load and validate model config from models.yaml."""
-    config = load_models_config(config_path)
-
-    for m in config.models:
-        if m.name == model:
-            return m
-
-    logger.error(f"Model '{model}' not found in {config_path}")
-    raise typer.Exit(code=1)
-
-
-def _get_models_to_run(
-    model: str | None, provider: str | None, config_path: Path | None
-) -> list[ModelConfig]:
-    """Get list of models to run based on filters."""
-    config = load_models_config(config_path)
-    models = []
-
-    for m in config.models:
-        # Filter by model name if specified
-        if model is not None and m.name != model:
-            continue
-        # Filter by provider if specified
-        if provider is not None and m.provider != provider:
-            continue
-        models.append(m)
-
-    if not models:
-        filters = []
-        if model:
-            filters.append(f"model='{model}'")
-        if provider:
-            filters.append(f"provider='{provider}'")
-        logger.error(f"No models found matching filters: {', '.join(filters)}")
-        raise typer.Exit(code=1)
-
-    return models
-
-
-def _load_task_config(task: str, prompt_vars: str) -> SimulationConfig:
-    """Load and parse task prompt configuration."""
-    variables = json.loads(prompt_vars)
-
-    prompts_dir = Path(__file__).parent / "simulations" / "prompts" / "tasks"
-    prompt_path = prompts_dir / f"{task}.yaml"
-
-    try:
-        return load_prompt(prompt_path, variables)
-    except FileNotFoundError:
-        logger.error(f"Task not found: {prompt_path}")
-        raise typer.Exit(code=1) from None
-    except Exception as e:
-        logger.error(f"Failed to load prompt: {e}")
-        raise typer.Exit(code=1) from None
 
 
 if __name__ == "__main__":
