@@ -1,8 +1,8 @@
 # Beyond Vibes
 
-*LLM evaluation framework for testing self-hosted, open source models running on llama.cpp.*
+*LLM evaluation framework for testing both self-hosted, open source models running on llama.cpp and API-based models (OpenAI, Anthropic, etc.).*
 
-This project provides a framework to evaluate local models and compare them in latency and quality across real-world engineering tasks. While applicable to API providers, the primary focus is benchmarking local model performance under constrained hardware.
+This project provides a framework to evaluate models and compare them in latency and quality across real-world engineering tasks. Originally focused on benchmarking local model performance under constrained hardware, it now supports both local and API providers, allowing direct comparison between approaches.
 
 ## Archetypes
 
@@ -109,12 +109,13 @@ uv sync --all-extras
 
 ## CLI - Model Download
 
-Download models from HuggingFace to S3.
+Download models from HuggingFace to S3. **Only required for local models** (provider: local).
 
 ### Prerequisites
 
 - S3 bucket must exist before running
 - Valid HuggingFace model repo
+- Models with `provider: local` in `models.yaml`
 
 ### Setup
 
@@ -127,13 +128,53 @@ S3_SECRET_KEY=your-secret-key
 ```
 
 2. **Create `models.yaml` config:**
+
+Models can be either **local** (downloaded from HuggingFace) or **API** (remote providers like OpenAI, Anthropic).
+
+**Local models** require `repo_id` for downloading:
 ```yaml
 bucket: your-bucket
 models:
-  - name: model-name
-    repo_id: namespace/model-repo
-    quant_tags: ["Q4_K_M", "Q8_0"]
+  - name: qwen3-0.6B
+    repo_id: unsloth/Qwen3-0.6B-GGUF
+    provider: local  # default if not specified
+    quant_tags: ["Q6_K_XL", "Q8_K_XL"]
 ```
+
+**API models** don't require downloading:
+```yaml
+models:
+  - name: gpt-4o
+    provider: openai
+    model_id: gpt-4o  # optional, defaults to name
+```
+
+**Full example with mixed providers:**
+```yaml
+bucket: beyond-vibes
+models:
+  # Local models - will be downloaded
+  - name: qwen3-0.6B
+    repo_id: unsloth/Qwen3-0.6B-GGUF
+    provider: local
+    quant_tags: ["Q6_K_XL", "Q8_K_XL"]
+
+  # API-only models - no download needed
+  - name: gpt-4o
+    provider: openai
+    model_id: gpt-4o
+
+  - name: claude-sonnet
+    provider: anthropic
+    model_id: claude-sonnet-4-20250514
+```
+
+**Configuration fields:**
+- `name` (required): Identifier for the model
+- `provider`: Provider type (`local` for HF downloads, or any API provider like `openai`, `anthropic`)
+- `repo_id`: HuggingFace repository ID (required for `provider: local`)
+- `model_id`: Model identifier for the API (optional, defaults to `name`)
+- `quant_tags`: Quantization tags for filtering GGUF files (local models only)
 
 ### Run
 
@@ -141,6 +182,69 @@ models:
 # Dry run (preview only)
 uv run beyond-vibes download --config-path models.yaml --dry-run
 
-# Actual download
+# Actual download (skips API models automatically)
 uv run beyond-vibes download
 ```
+
+The download command automatically skips models without a `repo_id` (API models) and only processes local models that need downloading from HuggingFace.
+
+## CLI - Simulations
+
+Run simulations by cloning a repo and executing a prompt via OpenCode.
+
+### Prerequisites
+
+- OpenCode server running (default: http://127.0.0.1:4096)
+- MLflow tracking server configured (optional, for logging)
+- Model defined in `models.yaml`
+
+### Setup
+
+1. **Create `.env` file (if not already done):**
+```bash
+MLFLOW_TRACKING_URI=https://mlflow.example.com
+```
+
+2. **Ensure `models.yaml` has your model:**
+```yaml
+bucket: beyond-vibes
+models:
+  - name: minimax-m2.5-free
+    repo_id: opencode/minimax-m2.5-free
+    quant_tags: []
+```
+
+### Run
+
+```bash
+# Run simulation with a specific model
+uv run beyond-vibes simulate --task poetry_to_uv --model minimax-m2.5-free
+
+# Run all models from a specific provider
+uv run beyond-vibes simulate --task poetry_to_uv --provider openai
+
+# Filter by both model and provider
+uv run beyond-vibes simulate --task poetry_to_uv --model gpt-4o --provider openai
+
+# With custom config
+uv run beyond-vibes simulate --task poetry_to_uv --model qwen3-0.6B --config-path mymodels.yaml
+
+# With custom prompt variables
+uv run beyond-vibes simulate --task auth_plan --model minimax-m2.5-free --prompt-vars '{"requirements": "OAuth2"}'
+
+# With specific quantization for local models
+uv run beyond-vibes simulate --task poetry_to_uv --model qwen3-0.6B --quant Q6_K_XL
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--task` | Task name (without .yaml) - required |
+| `--model` | Model name from models.yaml (filter by specific model) |
+| `--provider` | Filter by provider (e.g., `local`, `openai`, `anthropic`) |
+| `--config-path` | Path to models.yaml (default: models.yaml) |
+| `--prompt-vars` | JSON dict of variables for prompt templating (default: {}) |
+| `--quant` | Quantization tag for local models (uses first if not specified) |
+
+**Note:** You must specify either `--model` or `--provider` (or both). If you specify only `--provider`, all models matching that provider will be run sequentially.

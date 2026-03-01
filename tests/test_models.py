@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from beyond_vibes.config import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
+from beyond_vibes.model_config import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
 
 
 def test_model_config_valid() -> None:
@@ -11,6 +11,7 @@ def test_model_config_valid() -> None:
     config = ModelConfig(
         name="mistral-7b",
         repo_id="TheBloke/Mistral-7B-GGUF",
+        provider="local",
         quant_tags=["Q8_0", "Q4_K_M"],
     )
     assert config.name == "mistral-7b"
@@ -24,16 +25,68 @@ def test_model_config_custom_revision() -> None:
     config = ModelConfig(
         name="test-model",
         repo_id="test/repo",
+        provider="local",
         quant_tags=["Q4_K_M"],
         revision="v1.0",
     )
     assert config.revision == "v1.0"
 
 
-def test_model_config_missing_required_fields() -> None:
-    """Test that ValidationError is raised for missing required fields."""
-    with pytest.raises(ValidationError):
-        ModelConfig(name="test-model")
+def test_model_config_only_name_required() -> None:
+    """Test that only name is required for API models."""
+    # API model with just name should work
+    config = ModelConfig(
+        name="test-model",
+        provider="openai",
+    )
+    assert config.name == "test-model"
+    assert config.provider == "openai"
+
+
+def test_model_config_local_requires_repo_id() -> None:
+    """Test that local provider requires repo_id."""
+    with pytest.raises(ValidationError) as exc_info:
+        ModelConfig(
+            name="test-model",
+            provider="local",
+            # repo_id is missing, should fail for local provider
+        )
+    error_msg = str(exc_info.value)
+    assert "repo_id" in error_msg or "local" in error_msg.lower()
+
+
+def test_model_config_api_no_repo_id() -> None:
+    """Test that API provider works without repo_id."""
+    config = ModelConfig(
+        name="gpt-4o",
+        provider="openai",
+        model_id="gpt-4o",
+    )
+    assert config.name == "gpt-4o"
+    assert config.provider == "openai"
+    assert config.model_id == "gpt-4o"
+    assert config.repo_id is None
+
+
+def test_model_config_get_model_id_fallback() -> None:
+    """Test that get_model_id falls back to name when model_id is not set."""
+    config = ModelConfig(
+        name="mistral-7b",
+        repo_id="TheBloke/Mistral-7B-GGUF",
+        provider="local",
+        quant_tags=[],
+    )
+    assert config.get_model_id() == "mistral-7b"
+
+
+def test_model_config_get_model_id_explicit() -> None:
+    """Test that get_model_id returns model_id when set."""
+    config = ModelConfig(
+        name="my-gpt4",
+        provider="openai",
+        model_id="gpt-4",
+    )
+    assert config.get_model_id() == "gpt-4"
 
 
 def test_model_config_empty_quant_tags() -> None:
@@ -41,6 +94,7 @@ def test_model_config_empty_quant_tags() -> None:
     config = ModelConfig(
         name="test-model",
         repo_id="test/repo",
+        provider="local",
         quant_tags=[],
     )
     assert config.quant_tags == []
@@ -54,6 +108,7 @@ def test_config_valid() -> None:
             ModelConfig(
                 name="mistral-7b",
                 repo_id="TheBloke/Mistral-7B-GGUF",
+                provider="local",
                 quant_tags=["Q8_0"],
             ),
         ],
@@ -82,11 +137,13 @@ def test_config_multiple_models() -> None:
             ModelConfig(
                 name="mistral-7b",
                 repo_id="TheBloke/Mistral-7B-GGUF",
+                provider="local",
                 quant_tags=["Q8_0"],
             ),
             ModelConfig(
                 name="llama-13b",
                 repo_id="TheBloke/Llama-2-13B-GGUF",
+                provider="local",
                 quant_tags=["Q4_K_M"],
             ),
         ],

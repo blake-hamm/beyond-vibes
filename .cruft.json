@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/blake-hamm/boilerplates/",
-  "commit": "db6b9b668a8b9d19a8b5695f470b1c003d7639fd",
+  "commit": "main",
   "checkout": null,
   "context": {
     "cookiecutter": {

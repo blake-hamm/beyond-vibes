@@ -1,0 +1,23 @@
+name: "unit_tests"
+description: "Create unit test coverage"
+archetype: "repo_maintenance"
+repository:
+  url: "https://github.com/blake-hamm/lighthearted"
+  branch: "main"
+agent: "build"
+max_turns: 50
+system_prompt: |
+  You are running on NixOS. Never ask for human feedback or confirmation.
+  Just proceed with the best approach and explain what you did afterward.
+prompt: |
+  You are an expert QA Engineer. Ensure 80% or higher unit test coverage.
+
+  Requirements:
+  - This project uses nix and poetry
+  - Use pytest in dev dependency group
+  - Use shared fixtures in conftest.py
+
+  Steps:
+  1. Create unit tests
+  2. Check unit tests coverage
+  3. Once 80% or higher coverage is achieved, stop and report success

@@ -15,15 +15,8 @@ repos:
   hooks:
     - id: run-coverage
       name: Run Coverage
-      entry: .venv/bin/python -m coverage run
+      entry: .venv/bin/python -m pytest --cov-fail-under=80
       language: system
-      pass_filenames: false  # Prevent passing filenames as arguments
+      pass_filenames: false
       stages: [pre-commit]
-- repo: local
-  hooks:
-    - id: report-coverage
-      name: Report Coverage
-      entry: .venv/bin/python -m coverage report
-      language: system
-      pass_filenames: false  # Prevent passing filenames as arguments
-      stages: [pre-commit]
+      types_or: [python, pyi, jupyter]

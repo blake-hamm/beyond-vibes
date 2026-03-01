@@ -52,6 +52,10 @@ If the implementation is hard to explain, it's a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea -- let's do more of those!
 
+### Docstrings
+
+Keep docstrings brief and descriptive. Well-typed signatures eliminate the need for verbose Args/Returns sections. Avoid copying types into docstrings — this creates drift and redundant state. One-line docstrings are preferred unless explaining non-obvious behavior.
+
 ### TDD Workflow (Optional)
 
 When making code changes in `src/`, prefer Test Driven Development:

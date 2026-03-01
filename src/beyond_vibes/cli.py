@@ -1,15 +1,21 @@
-"""CLI for downloading models from HuggingFace to S3."""
+"""CLI for beyond vibes."""
 
 import logging
 from pathlib import Path
 
 import typer
-import yaml
 
-from beyond_vibes.config import Config
-from beyond_vibes.hf import HFClient
-from beyond_vibes.s3 import S3Client
+from beyond_vibes.model_config import (
+    get_model_by_name,
+    load_models_config,
+)
+from beyond_vibes.model_downloader import HFClient, S3Client
 from beyond_vibes.settings import settings
+from beyond_vibes.simulations import SimulationLogger
+from beyond_vibes.simulations.opencode import OpenCodeClient
+from beyond_vibes.simulations.orchestration import run_simulation
+from beyond_vibes.simulations.prompts.loader import build_prompt, load_task_config
+from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +38,19 @@ def download(
     dry_run: bool = False,
 ) -> None:
     """Download models from HuggingFace to S3."""
-    config_data = yaml.safe_load(config_path.read_text())
-    config = Config(**config_data)
+    config = load_models_config(config_path)
 
     s3_client = S3Client()
     hf_client = HFClient(token=settings.hf_token)
 
     for model in config.models:
+        if model.repo_id is None:
+            logger.info(
+                f"Skipping {model.name} - provider '{model.provider}' "
+                "does not require download"
+            )
+            continue
+
         logger.info(f"Processing {model.name}...")
 
         try:
@@ -78,6 +90,66 @@ def download(
                 )
 
     logger.info("Done!")
+
+
+@app.command()
+def simulate(  # noqa: PLR0913
+    task: str = typer.Option(..., "--task", help="Task name (without .yaml)"),
+    model: str = typer.Option(..., "--model", help="Model name from models.yaml"),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help="Provider filter when multiple models have the same name",
+    ),
+    config_path: Path | None = Path(DEFAULT_CONFIG),
+    prompt_vars: str = typer.Option(
+        "{}", "--prompt-vars", help="JSON dict of variables"
+    ),
+    quant: str | None = typer.Option(
+        None,
+        "--quant",
+        help="Quantization tag (e.g., Q6_K_XL). Uses first if not specified.",
+    ),
+) -> None:
+    """Run a simulation by cloning a repo and executing a prompt via OpenCode."""
+    try:
+        sim_config = load_task_config(task, prompt_vars)
+    except FileNotFoundError:
+        logger.error(f"Task not found: {task}")
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        logger.error(f"Failed to load prompt: {e}")
+        raise typer.Exit(code=1) from None
+
+    prompt = build_prompt(sim_config)
+
+    # Get the single model to run (optionally filtered by provider)
+    try:
+        model_config = get_model_by_name(model, provider, config_path)
+    except ValueError as e:
+        logger.error(str(e))
+        raise typer.Exit(code=1) from None
+
+    logger.info(f"Running simulation with model: {model_config.name}")
+
+    quant_tag = quant or (
+        model_config.quant_tags[0] if model_config.quant_tags else None
+    )
+
+    sandbox = SandboxManager()
+
+    with OpenCodeClient() as opencode_client:
+        sim_logger = SimulationLogger(quant_tag=quant_tag)
+
+        error_occurred = run_simulation(
+            sim_config, model_config, sandbox, opencode_client, sim_logger, prompt
+        )
+
+    sandbox.cleanup()
+    logger.info("Sandbox cleaned up")
+
+    if error_occurred:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

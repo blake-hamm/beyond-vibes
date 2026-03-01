@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from beyond_vibes.s3 import S3Client
+from beyond_vibes.model_downloader import S3Client
 
 
 @pytest.fixture
@@ -20,10 +20,10 @@ def s3_client() -> S3Client:
             "S3_SECRET_KEY": "test-secret-key",
         },
     ):
-        with patch("beyond_vibes.s3.Minio") as mock_minio:
+        with patch("beyond_vibes.model_downloader.s3.Minio") as mock_minio:
             mock_client = MagicMock()
             mock_minio.return_value = mock_client
-            with patch("beyond_vibes.s3.settings") as mock_settings:
+            with patch("beyond_vibes.model_downloader.s3.settings") as mock_settings:
                 mock_settings.s3_bucket = "test-bucket"
                 mock_settings.s3_endpoint = "https://s3.example.com"
                 mock_settings.s3_access_key = "test-access-key"

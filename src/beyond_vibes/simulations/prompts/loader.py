@@ -1,0 +1,107 @@
+"""Prompt loader for simulations."""
+
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from beyond_vibes.settings import settings
+from beyond_vibes.simulations.models import SimulationConfig
+
+logger = logging.getLogger(__name__)
+
+TEMPLATE_PATTERN = re.compile(r"\{\{(\w+)\}\}")
+
+DEFAULT_TASKS_DIR = Path(__file__).parent / "tasks"
+
+
+def render_template(template: str, variables: dict[str, Any]) -> str:
+    """Replace {{variable}} placeholders with values from variables dict."""
+
+    def replace(match: re.Match) -> str:
+        key = match.group(1)
+        value = variables.get(key, match.group(0))
+        return str(value)
+
+    return TEMPLATE_PATTERN.sub(replace, template)
+
+
+def load_prompt(
+    path: Path,
+    variables: dict[str, Any] | None = None,
+) -> SimulationConfig:
+    """Load YAML prompt file, render {{variables}} in prompt field, return config."""
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt file not found: {path}")
+
+    try:
+        with path.open() as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {path}: {e}") from e
+
+    if not data:
+        raise ValueError(f"Empty prompt file: {path}")
+
+    variables = variables or {}
+
+    if "prompt" in data:
+        data["prompt"] = render_template(data["prompt"], variables)
+
+    try:
+        config = SimulationConfig(**data)
+    except Exception as e:
+        raise ValueError(f"Invalid prompt config in {path}: {e}") from e
+
+    logger.debug("Loaded prompt '%s' from %s", config.name, path)
+    return config
+
+
+def load_task_config(
+    task: str,
+    prompt_vars: str = "{}",
+    tasks_dir: Path = DEFAULT_TASKS_DIR,
+) -> SimulationConfig:
+    """Load and parse task prompt configuration.
+
+    Args:
+        task: Task name (without .yaml extension).
+        prompt_vars: JSON string of variables to substitute in the prompt.
+        tasks_dir: Directory containing task YAML files.
+
+    Returns:
+        Parsed SimulationConfig.
+
+    Raises:
+        FileNotFoundError: If the task file doesn't exist.
+        ValueError: If the prompt_vars JSON is invalid or the config is invalid.
+
+    """
+    variables = json.loads(prompt_vars)
+    prompt_path = tasks_dir / f"{task}.yaml"
+    return load_prompt(prompt_path, variables)
+
+
+def build_prompt(sim_config: SimulationConfig) -> str:
+    """Build final prompt by prepending system prompts to task prompt."""
+    prompt = sim_config.prompt
+
+    if settings.system_prompt:
+        prompt = f"{settings.system_prompt}\n\n---\n\n{prompt}"
+
+    if sim_config.system_prompt:
+        prompt = f"{sim_config.system_prompt}\n\n---\n\n{prompt}"
+
+    return prompt
+
+
+def list_prompts(prompts_dir: Path) -> list[Path]:
+    """Return all .yaml files recursively under prompts_dir."""
+    if not prompts_dir.exists():
+        logger.warning("Prompts directory does not exist: %s", prompts_dir)
+        return []
+
+    return list(prompts_dir.rglob("*.yaml"))
