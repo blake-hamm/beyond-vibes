@@ -51,8 +51,7 @@ class SandboxManager:
                 logger.debug(f"Cleaned up sandbox: {self.workspace}")
             except OSError as e:
                 logger.warning(f"Failed to cleanup sandbox {self.workspace}: {e}")
-            finally:
-                self.workspace = None
+        self.workspace = None
 
     @contextmanager
     def sandbox(
