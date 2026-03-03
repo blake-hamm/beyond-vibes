@@ -53,6 +53,7 @@ class SimulationSession:
     total_output_tokens: int = 0
     total_tokens: int = 0
     tool_call_counts: dict[str, int] = field(default_factory=dict)
+    tool_error_count: int = 0
 
 
 class MlflowTracer:
@@ -278,6 +279,9 @@ class MlflowTracer:
 
         child_span.set_status("ERROR")
 
+        if self.session is not None:
+            self.session.tool_error_count += 1
+
         if is_explicit_error:
             error_type = "execution_error"
             error_message = state.get("error", "")
@@ -408,6 +412,15 @@ class MlflowTracer:
             mlflow.log_metric(f"tool_calls.{tool_name}", count)
             total_tool_calls += count
         mlflow.log_metric("total_tool_calls", total_tool_calls)
+
+        # Log tool error count
+        mlflow.log_metric("tool_error_count", self.session.tool_error_count)
+
+        # Set tags for filtering (in addition to metrics)
+        mlflow.set_tag("run.status", "error" if self.session.error else "success")
+        mlflow.set_tag("has_git_diff", "true" if self.session.git_diff else "false")
+        date_str = self.session.completed_at.strftime("%Y-%m-%d")
+        mlflow.set_tag("simulation.date", date_str)
 
         if self.session.git_diff:
             mlflow.log_text(self.session.git_diff, "git_diff.patch")
