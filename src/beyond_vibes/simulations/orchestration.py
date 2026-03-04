@@ -30,7 +30,7 @@ class SimulationOrchestrator:
         self._assistant_message_count: int = 0
         self._session_id: str | None = None
 
-    def run(  # noqa: PLR0913
+    def run(  # noqa: PLR0912, PLR0913
         self,
         repo_url: str,
         branch: str,
@@ -39,6 +39,7 @@ class SimulationOrchestrator:
         provider: str,
         agent: str,
         max_turns: int = 75,
+        capture_git_diff: bool = False,
     ) -> Generator[dict, None, None]:
         """Run simulation and yield new messages as they arrive."""
         with self.sandbox.sandbox(url=repo_url, branch=branch) as working_dir:
@@ -102,6 +103,14 @@ class SimulationOrchestrator:
                 if self._session_id:
                     self.opencode.abort_session(self._session_id)
                 raise
+            finally:
+                if capture_git_diff:
+                    diff = self.sandbox.get_git_diff()
+                    if diff:
+                        self.tracer.log_git_diff(diff)
+                        logger.info("Git diff captured (%d bytes)", len(diff))
+                    else:
+                        logger.debug("No git diff to capture (no changes)")
 
 
 def run_simulation(  # noqa: PLR0913
@@ -126,6 +135,7 @@ def run_simulation(  # noqa: PLR0913
                 provider=model_config.provider,
                 agent=sim_config.agent,
                 max_turns=sim_config.max_turns,
+                capture_git_diff=sim_config.capture_git_diff,
             ):
                 logger_ctx.log_message(message)
 

@@ -20,4 +20,5 @@ class SimulationConfig(BaseModel):
     prompt: str
     agent: str = "build"
     system_prompt: str | None = None
-    max_turns: int = 75
+    max_turns: int = 50
+    capture_git_diff: bool = False
