@@ -47,6 +47,7 @@ class SimulationSession:
     total_time_seconds: float | None = None
     messages: list[MessageData] = field(default_factory=list)
     git_diff: str | None = None
+    system_prompt: str | None = None
     error: str | None = None
     total_cost: float = 0.0
     total_input_tokens: int = 0
@@ -54,6 +55,7 @@ class SimulationSession:
     total_tokens: int = 0
     tool_call_counts: dict[str, int] = field(default_factory=dict)
     tool_error_count: int = 0
+    completion_status: str | None = None
 
 
 class MlflowTracer:
@@ -371,6 +373,14 @@ class MlflowTracer:
 
         self.session.git_diff = diff_content
 
+    def log_system_prompt(self, prompt: str) -> None:
+        """Log the system prompt for curation and traceability."""
+        if self.session is None:
+            logger.warning("No active session to log system prompt to")
+            return
+
+        self.session.system_prompt = prompt
+
     def log_error(self, error_message: str) -> None:
         """Log an error that occurred during the simulation."""
         if self.session is None:
@@ -378,6 +388,19 @@ class MlflowTracer:
             return
 
         self.session.error = error_message
+
+    def set_completion_status(self, status: str) -> None:
+        """Set the completion status of the simulation.
+
+        Args:
+            status: One of 'completed', 'max_turns', or 'error'
+
+        """
+        if self.session is None:
+            logger.warning("No active session to set completion status")
+            return
+
+        self.session.completion_status = status
 
     def _flush(self) -> None:
         """Flush all accumulated data to MLflow."""
@@ -418,11 +441,17 @@ class MlflowTracer:
 
         # Set tags for filtering (in addition to metrics)
         mlflow.set_tag("run.status", "error" if self.session.error else "success")
+        # completion_status: completed, max_turns, or error
+        completion_status = self.session.completion_status or "unknown"
+        mlflow.set_tag("run.completion_status", completion_status)
         mlflow.set_tag("has_git_diff", "true" if self.session.git_diff else "false")
         date_str = self.session.completed_at.strftime("%Y-%m-%d")
         mlflow.set_tag("simulation.date", date_str)
 
         if self.session.git_diff:
             mlflow.log_text(self.session.git_diff, "git_diff.patch")
+
+        if self.session.system_prompt:
+            mlflow.log_text(self.session.system_prompt, "system_prompt.txt")
 
         logger.info("Flushed session data to MLflow run %s", self.run_id)

@@ -29,6 +29,12 @@ class SimulationOrchestrator:
         self._seen_message_ids: set[str] = set()
         self._assistant_message_count: int = 0
         self._session_id: str | None = None
+        self._completion_status: str | None = None
+
+    @property
+    def completion_status(self) -> str | None:
+        """Return the completion status of the simulation."""
+        return self._completion_status
 
     def run(  # noqa: PLR0912, PLR0913
         self,
@@ -84,6 +90,7 @@ class SimulationOrchestrator:
                                         msg_id,
                                         self._session_id,
                                     )
+                                    self._completion_status = "completed"
                                     self.opencode.abort_session(self._session_id)
                                     return
 
@@ -94,12 +101,14 @@ class SimulationOrchestrator:
                             max_turns,
                             self._session_id,
                         )
+                        self._completion_status = "max_turns"
                         self.opencode.abort_session(self._session_id)
                         break
 
                     time.sleep(5)
             except Exception:
                 logger.exception("Simulation interrupted, aborting session")
+                self._completion_status = "error"
                 if self._session_id:
                     self.opencode.abort_session(self._session_id)
                 raise
@@ -125,6 +134,7 @@ def run_simulation(  # noqa: PLR0913
     error_occurred = False
     try:
         with tracer.log_simulation(sim_config, model_config) as logger_ctx:
+            logger_ctx.log_system_prompt(prompt)
             orchestrator = SimulationOrchestrator(opencode_client, tracer, sandbox)
 
             for message in orchestrator.run(
@@ -138,6 +148,10 @@ def run_simulation(  # noqa: PLR0913
                 capture_git_diff=sim_config.capture_git_diff,
             ):
                 logger_ctx.log_message(message)
+
+            # Capture completion status for MLflow tagging
+            if orchestrator.completion_status:
+                tracer.set_completion_status(orchestrator.completion_status)
 
             logger.info("Simulation completed")
 

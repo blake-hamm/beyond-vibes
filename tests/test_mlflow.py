@@ -494,6 +494,28 @@ class TestLogGitDiff:
             mock_logger.warning.assert_called_once()
 
 
+class TestLogSystemPrompt:
+    """Tests for log_system_prompt method."""
+
+    def test_log_system_prompt_success(self) -> None:
+        """Test logging system prompt."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+
+        tracer.log_system_prompt("System prompt content")
+
+        assert tracer.session.system_prompt == "System prompt content"
+
+    def test_log_system_prompt_no_session(self) -> None:
+        """Test logging system prompt without session."""
+        tracer = MlflowTracer()
+        tracer.session = None
+
+        with patch("beyond_vibes.simulations.mlflow.logger") as mock_logger:
+            tracer.log_system_prompt("System prompt content")
+            mock_logger.warning.assert_called_once()
+
+
 class TestLogError:
     """Tests for log_error method."""
 
@@ -552,6 +574,7 @@ class TestFlush:
         tracer.session.tool_call_counts = {"bash": 3, "read": 2}
         tracer.session.error = None
         tracer.session.git_diff = None
+        tracer.session.system_prompt = None
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             tracer._flush()
@@ -575,6 +598,7 @@ class TestFlush:
         tracer.session.tool_call_counts = {}
         tracer.session.error = "Something went wrong"
         tracer.session.git_diff = None
+        tracer.session.system_prompt = None
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             tracer._flush()
@@ -590,6 +614,7 @@ class TestFlush:
         tracer.session.tool_call_counts = {}
         tracer.session.error = None
         tracer.session.git_diff = "diff content"
+        tracer.session.system_prompt = None
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             tracer._flush()
@@ -597,3 +622,41 @@ class TestFlush:
             mock_mlflow.log_text.assert_called_once_with(
                 "diff content", "git_diff.patch"
             )
+
+    def test_flush_with_system_prompt(self) -> None:
+        """Test flush when session has system prompt."""
+        tracer = MlflowTracer()
+        tracer.run_id = "run-123"
+        tracer.session = MagicMock()
+        tracer.session.messages = []
+        tracer.session.tool_call_counts = {}
+        tracer.session.error = None
+        tracer.session.git_diff = None
+        tracer.session.system_prompt = "System prompt content"
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            tracer._flush()
+
+            mock_mlflow.log_text.assert_called_once_with(
+                "System prompt content", "system_prompt.txt"
+            )
+
+    def test_flush_with_git_diff_and_system_prompt(self) -> None:
+        """Test flush when session has both git diff and system prompt."""
+        tracer = MlflowTracer()
+        tracer.run_id = "run-123"
+        tracer.session = MagicMock()
+        tracer.session.messages = []
+        tracer.session.tool_call_counts = {}
+        tracer.session.error = None
+        tracer.session.git_diff = "diff content"
+        tracer.session.system_prompt = "System prompt content"
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            tracer._flush()
+
+            mock_mlflow.log_text.assert_any_call("diff content", "git_diff.patch")
+            mock_mlflow.log_text.assert_any_call(
+                "System prompt content", "system_prompt.txt"
+            )
+            assert mock_mlflow.log_text.call_count == 2  # noqa: PLR2004
