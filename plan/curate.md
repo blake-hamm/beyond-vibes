@@ -105,60 +105,9 @@ Datasets are versioned with timestamps:
 - Auto-append timestamp: `{name}_YYYYMMDD_HHMMSS`
 - Logged as MLflow artifact with version metadata
 
-## Pre-Requisites
-
-Before implementing the curation pipeline, the following enhancements to simulation tracing are required:
-
-### 1. Enhanced MLflow Metadata Tags
-
-Add the following tags to simulation runs in `mlflow.py` to enable efficient filtering:
-
-- `run.status` - Explicit success/error status tag
-- `has_git_diff` - Boolean flag for diff availability
-- `simulation.date` - ISO date stamp for date-range queries
-- `total_tool_calls` - Tool call count as tag (complements metric)
-
-**Action Item**: Update `MlflowTracer._flush()` to set these tags before run completion.
-
-### 2. Tool Error Aggregation
-
-Currently tool errors are captured as span events but not aggregated at the run level. The curation process needs a `tool_error_count` metric to detect hallucination and schema adherence issues.
-
-**Action Item**: Add logic to count tool errors during span processing and log as a metric in `_flush()`.
-
-### 3. Git Diff Persistence
-
-The `SimulationSession` dataclass has a `git_diff` field, but this is only populated if `log_git_diff()` is called externally. The orchestration layer needs to capture and log the git diff after simulation completion.
-
-**Action Item**: Implement git diff capture in the simulation orchestration (outside scope of curation, to be handled separately).
-
-### 4. Input Prompt Reconstruction
-
-The input prompt needs to be accessible for dataset curation. Since prompts are constructed from task YAML files via `prompts/loader.py`, the curation process should reconstruct the final prompt by:
-- Loading the task configuration using existing loader utilities
-- Applying any prompt variables used during simulation
-- Building the complete prompt with system prompts
-
-**Action Item**: Ensure task name and prompt variables are available as MLflow parameters or reconstructible from run context.
-
 ## Implementation Phases
 
-### Phase 1: Pre-Requisite Metadata (Required First)
-
-**Goal**: Enhance simulation tracing to support dataset filtering and extraction.
-
-**Action Items**:
-1. Add `run.status`, `has_git_diff`, `simulation.date` tags to MLflow runs
-2. Implement `tool_error_count` metric aggregation from span errors
-3. Verify task name and archetype are consistently logged as tags
-4. Document prompt reconstruction approach using `prompts/loader.py`
-
-**Success Criteria**:
-- All new simulation runs include enhanced tags
-- Can query runs by status, date, and git diff availability
-- Tool error counts are available as metrics
-
-### Phase 2: Core Curation Pipeline
+### Phase 1: Core Curation Pipeline
 
 **Goal**: Implement the `curate` CLI command with universal schema support.
 
@@ -177,7 +126,7 @@ The input prompt needs to be accessible for dataset curation. Since prompts are 
 - Dataset includes all universal schema fields
 - Versioning works with timestamps
 
-### Phase 3: Archetype-Specific Curation
+### Phase 2: Archetype-Specific Curation
 
 **Goal**: Extend curation to support archetype-specific dataset schemas and filtering.
 
@@ -193,7 +142,7 @@ The input prompt needs to be accessible for dataset curation. Since prompts are 
 - Archetype-specific metrics are computed and stored
 - Universal schema remains consistent across archetypes
 
-### Phase 4: Integration & Documentation
+### Phase 3: Integration & Documentation
 
 **Goal**: Connect curated datasets to evaluators and document usage.
 
