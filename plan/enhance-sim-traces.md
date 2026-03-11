@@ -44,6 +44,7 @@ class SimulationSession:
     tool_error_count: int = 0
     completion_status: str | None = None
     # NEW: Loop detection tracking
+    tool_loop_threshold: int = 3  # Configurable threshold for loop detection
     last_tool_name: str | None = None
     consecutive_tool_calls: int = 0
     max_consecutive_calls: int = 0
@@ -291,13 +292,18 @@ def _flush(self) -> None:
         "total_tool_calls": total_tool_calls,
         "tool_error_count": self.session.tool_error_count,
         "total_tokens": self.session.total_tokens,
-        "tool_loop_detected": self.session.max_consecutive_calls > 3,
+        "total_cost": self.session.total_cost,
+        "tool_loop_detected": self.session.max_consecutive_calls > self.session.tool_loop_threshold,
+        "tool_loop_threshold": self.session.tool_loop_threshold,
         "max_consecutive_calls": self.session.max_consecutive_calls,
         "error_rate": (
             self.session.tool_error_count / max(total_tool_calls, 1)
         ),
         "token_efficiency": (
-            self.session.total_tokens / max(total_tool_calls, 1)
+            self.session.total_tokens / max(self.session.total_messages, 1)
+        ),
+        "cost_efficiency": (
+            self.session.total_cost / max(total_tool_calls, 1)
         ),
         "error_message_indices": self.session.error_message_indices,
     }
@@ -323,35 +329,7 @@ def _flush(self) -> None:
     logger.info("Flushed session data to MLflow run %s", self.run_id)
 ```
 
-### 7. Create TraceSummary Model (Optional)
-
-**File**: `src/beyond_vibes/evaluators/models.py`
-
-Define Pydantic model for type safety:
-
-```python
-from pydantic import BaseModel
-
-
-class TraceSummary(BaseModel):
-    """Pre-computed trace metrics for evaluation.
-
-    These metrics are computed during simulation and stored as
-    a JSON artifact, enabling fast evaluation without re-parsing traces.
-    """
-
-    total_messages: int
-    total_tool_calls: int
-    tool_error_count: int
-    total_tokens: int
-    tool_loop_detected: bool
-    max_consecutive_calls: int
-    error_rate: float
-    token_efficiency: float
-    error_message_indices: list[int]
-```
-
-### 8. Update Extractor to Read Trace Summary
+### 7. Update Extractor to Read Trace Summary
 
 **File**: `src/beyond_vibes/evaluators/extractor.py`
 
@@ -400,10 +378,13 @@ def _load_trace_summary(run_id: str) -> dict:
             "total_tool_calls": 0,
             "tool_error_count": 0,
             "total_tokens": 0,
+            "total_cost": 0.0,
             "tool_loop_detected": False,
+            "tool_loop_threshold": 3,
             "max_consecutive_calls": 0,
             "error_rate": 0.0,
             "token_efficiency": 0.0,
+            "cost_efficiency": 0.0,
             "error_message_indices": [],
         }
 ```
@@ -418,10 +399,13 @@ The `trace_summary.json` artifact contains:
   "total_tool_calls": 42,
   "tool_error_count": 3,
   "total_tokens": 15420,
+  "total_cost": 0.05,
   "tool_loop_detected": true,
+  "tool_loop_threshold": 3,
   "max_consecutive_calls": 5,
   "error_rate": 0.071,
-  "token_efficiency": 367.14,
+  "token_efficiency": 616.8,
+  "cost_efficiency": 0.00119,
   "error_message_indices": [5, 12, 23]
 }
 ```
@@ -432,10 +416,13 @@ The `trace_summary.json` artifact contains:
 - `total_tool_calls`: Total number of tool invocations
 - `tool_error_count`: Number of tool calls that resulted in errors
 - `total_tokens`: Total tokens consumed (input + output)
-- `tool_loop_detected`: True if any tool was called >3 times consecutively
+- `total_cost`: Total cost of the simulation in USD
+- `tool_loop_detected`: True if any tool was called >threshold times consecutively
+- `tool_loop_threshold`: Configurable threshold for loop detection (default: 3)
 - `max_consecutive_calls`: Maximum consecutive calls of the same tool
 - `error_rate`: tool_error_count / total_tool_calls
-- `token_efficiency`: total_tokens / total_tool_calls
+- `token_efficiency`: total_tokens / total_messages (tokens per message)
+- `cost_efficiency`: total_cost / total_tool_calls (cost per tool call)
 - `error_message_indices`: Message indices where errors occurred (for analysis)
 
 ## Benefits
@@ -456,7 +443,7 @@ The `trace_summary.json` artifact contains:
 ## Success Criteria
 
 - [ ] `trace_summary.json` artifact logged to every simulation run
-- [ ] Tool loops detected in real-time (max_consecutive_calls > 3)
+- [ ] Tool loops detected in real-time (max_consecutive_calls > threshold)
 - [ ] Error indices correctly tracked per message
 - [ ] Evaluator reads summary without parsing full trace
 - [ ] Fallback works for runs created before this change
