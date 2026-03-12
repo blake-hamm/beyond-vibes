@@ -3,13 +3,14 @@
 import json
 import logging
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generator
 
 import mlflow
 from mlflow.entities.span import SpanType
 from mlflow.entities.span_event import SpanEvent
+from pydantic import BaseModel, Field
 
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.models import SimulationConfig
@@ -33,19 +34,20 @@ class MessageData:
     raw_message: dict | None = None
 
 
-@dataclass
-class SimulationSession:
+class SimulationSession(BaseModel):
     """Complete simulation session data."""
 
+    model_config = {"arbitrary_types_allowed": True}
+
     sim_config: SimulationConfig
-    model_config: ModelConfig
+    llm_config: ModelConfig
     quant_tag: str | None = None
     session_id: str = ""
-    started_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime = Field(default_factory=datetime.now)
     completed_at: datetime | None = None
     total_messages: int = 0
     total_time_seconds: float | None = None
-    messages: list[MessageData] = field(default_factory=list)
+    messages: list[MessageData] = Field(default_factory=list)
     git_diff: str | None = None
     system_prompt: str | None = None
     error: str | None = None
@@ -53,9 +55,19 @@ class SimulationSession:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_tokens: int = 0
-    tool_call_counts: dict[str, int] = field(default_factory=dict)
+    tool_call_counts: dict[str, int] = Field(default_factory=dict)
     tool_error_count: int = 0
     completion_status: str | None = None
+    tool_loop_threshold: int = 3
+    tool_last_name: str | None = None
+    tool_consecutive_calls: int = 0
+    tool_max_consecutive_calls: int = 0
+    error_message_indices: list[int] = Field(default_factory=list)
+    tool_total_calls: int | None = None
+    tool_loop_detected: bool | None = None
+    tool_error_rate: float | None = None
+    token_efficiency: float | None = None
+    cost_efficiency: float | None = None
 
 
 class MlflowTracer:
@@ -85,7 +97,7 @@ class MlflowTracer:
 
         self.session = SimulationSession(
             sim_config=sim_config,
-            model_config=model_config,
+            llm_config=model_config,
             quant_tag=self.quant_tag,
             session_id=session_id,
             started_at=datetime.now(),
@@ -179,6 +191,7 @@ class MlflowTracer:
                     part,
                     parent_start_ns,
                     parent_end_ns,
+                    message_index,
                 )
 
                 # Check for tool errors
@@ -211,8 +224,8 @@ class MlflowTracer:
                 "llm.token_usage.input_tokens": input_tokens,
                 "llm.token_usage.output_tokens": output_tokens,
                 "llm.token_usage.total_tokens": total_tokens,
-                "modelID": self.session.model_config.get_model_id(),
-                "providerID": self.session.model_config.provider,
+                "modelID": self.session.llm_config.get_model_id(),
+                "providerID": self.session.llm_config.provider,
                 "cost": cost,
             }
         )
@@ -260,13 +273,14 @@ class MlflowTracer:
 
         return start_ns, end_ns
 
-    def _handle_tool_errors(
+    def _handle_tool_errors(  # noqa: PLR0913
         self,
         child_span: Any,  # noqa: ANN401
         state: dict,
         tool_name: str,
         call_id: str,
         tool_output: Any,  # noqa: ANN401
+        message_index: int,
     ) -> None:
         """Check for tool errors and add exception event if found."""
         status = state.get("status", "")
@@ -283,6 +297,7 @@ class MlflowTracer:
 
         if self.session is not None:
             self.session.tool_error_count += 1
+            self.session.error_message_indices.append(message_index)
 
         if is_explicit_error:
             error_type = "execution_error"
@@ -317,6 +332,7 @@ class MlflowTracer:
         part: dict,
         parent_start_ns: int | None,
         parent_end_ns: int | None,
+        message_index: int,
     ) -> None:
         """Create a child span for a tool call with latency and error tracking."""
         tool_name = part.get("tool", "unknown")
@@ -345,21 +361,34 @@ class MlflowTracer:
             child_span.set_outputs({"output": tool_output})
 
         # Handle errors and track tool call count
-        self._handle_tool_errors(child_span, state, tool_name, call_id, tool_output)
-        self._accumulate_tool_call(tool_name)
+        self._handle_tool_errors(
+            child_span, state, tool_name, call_id, tool_output, message_index
+        )
+        self._accumulate_tool_call(tool_name, message_index)
 
         child_span.end(end_time_ns=child_end_ns)
 
-    def _accumulate_tool_call(self, tool_name: str) -> None:
-        """Increment tool call count for a tool.
-
-        Args:
-            tool_name: Name of the tool
-
-        """
+    def _accumulate_tool_call(
+        self,
+        tool_name: str,
+        message_index: int,  # noqa: ARG002
+    ) -> None:
+        """Increment tool call count and track consecutive calls for loop detection."""
         if self.session is None:
             return
 
+        # Track consecutive calls for loop detection
+        if tool_name == self.session.tool_last_name:
+            self.session.tool_consecutive_calls += 1
+            self.session.tool_max_consecutive_calls = max(
+                self.session.tool_max_consecutive_calls,
+                self.session.tool_consecutive_calls,
+            )
+        else:
+            self.session.tool_consecutive_calls = 1
+            self.session.tool_last_name = tool_name
+
+        # Original count tracking
         if tool_name not in self.session.tool_call_counts:
             self.session.tool_call_counts[tool_name] = 0
 
@@ -434,10 +463,41 @@ class MlflowTracer:
         for tool_name, count in self.session.tool_call_counts.items():
             mlflow.log_metric(f"tool_calls.{tool_name}", count)
             total_tool_calls += count
-        mlflow.log_metric("total_tool_calls", total_tool_calls)
+        mlflow.log_metric("tool_total_calls", total_tool_calls)
 
         # Log tool error count
         mlflow.log_metric("tool_error_count", self.session.tool_error_count)
+
+        # Compute derived metrics and set on session
+        self.session.total_messages = len(self.session.messages)
+        self.session.tool_total_calls = total_tool_calls
+        self.session.tool_loop_detected = (
+            self.session.tool_max_consecutive_calls > self.session.tool_loop_threshold
+        )
+        self.session.tool_error_rate = self.session.tool_error_count / max(
+            total_tool_calls, 1
+        )
+        self.session.token_efficiency = self.session.total_tokens / max(
+            self.session.total_messages, 1
+        )
+        self.session.cost_efficiency = self.session.total_cost / max(
+            self.session.total_messages, 1
+        )
+
+        # Log trace summary as JSON artifact for evaluators
+        trace_summary = self.session.model_dump(mode="json")
+        mlflow.log_dict(trace_summary, "trace_summary.json")
+
+        # Log computed metrics for MLflow UI
+        mlflow.log_metric(
+            "tool_loop_detected", 1 if self.session.tool_loop_detected else 0
+        )
+        mlflow.log_metric(
+            "tool_max_consecutive_calls", self.session.tool_max_consecutive_calls
+        )
+        mlflow.log_metric("tool_error_rate", self.session.tool_error_rate)
+        mlflow.log_metric("token_efficiency", self.session.token_efficiency)
+        mlflow.log_metric("cost_efficiency", self.session.cost_efficiency)
 
         # Set tags for filtering (in addition to metrics)
         mlflow.set_tag("run.status", "error" if self.session.error else "success")

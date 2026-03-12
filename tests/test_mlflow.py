@@ -67,11 +67,11 @@ class TestSimulationSession:
         """Test SimulationSession default values."""
         session = SimulationSession(
             sim_config=mock_simulation_config,
-            model_config=mock_model_config,
+            llm_config=mock_model_config,
         )
 
         assert session.sim_config == mock_simulation_config
-        assert session.model_config == mock_model_config
+        assert session.llm_config == mock_model_config
         assert session.quant_tag is None
         assert session.session_id == ""
         assert isinstance(session.started_at, datetime)
@@ -411,7 +411,7 @@ class TestHandleToolErrors:
         mock_span = MagicMock()
         state = {"status": "error", "error": "Something went wrong"}
 
-        tracer._handle_tool_errors(mock_span, state, "bash", "call-1", "output")
+        tracer._handle_tool_errors(mock_span, state, "bash", "call-1", "output", 0)
 
         mock_span.set_status.assert_called_with("ERROR")
         mock_span.add_event.assert_called_once()
@@ -422,7 +422,9 @@ class TestHandleToolErrors:
         mock_span = MagicMock()
         state = {"status": "success", "metadata": {"exit": 1}}
 
-        tracer._handle_tool_errors(mock_span, state, "bash", "call-1", "error output")
+        tracer._handle_tool_errors(
+            mock_span, state, "bash", "call-1", "error output", 0
+        )
 
         mock_span.set_status.assert_called_with("ERROR")
         mock_span.add_event.assert_called_once()
@@ -433,7 +435,7 @@ class TestHandleToolErrors:
         mock_span = MagicMock()
         state = {"status": "success", "metadata": {"exit": 0}}
 
-        tracer._handle_tool_errors(mock_span, state, "bash", "call-1", "output")
+        tracer._handle_tool_errors(mock_span, state, "bash", "call-1", "output", 0)
 
         mock_span.set_status.assert_not_called()
         mock_span.add_event.assert_not_called()
@@ -447,8 +449,16 @@ class TestAccumulateToolCall:
         tracer = MlflowTracer()
         tracer.session = MagicMock()
         tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
+        tracer.session.tool_last_name = None
+        tracer.session.tool_consecutive_calls = 0
+        tracer.session.tool_max_consecutive_calls = 0
 
-        tracer._accumulate_tool_call("bash")
+        tracer._accumulate_tool_call("bash", 0)
 
         assert tracer.session.tool_call_counts["bash"] == 1
 
@@ -457,8 +467,11 @@ class TestAccumulateToolCall:
         tracer = MlflowTracer()
         tracer.session = MagicMock()
         tracer.session.tool_call_counts = {"bash": 2}
+        tracer.session.tool_last_name = None
+        tracer.session.tool_consecutive_calls = 0
+        tracer.session.tool_max_consecutive_calls = 0
 
-        tracer._accumulate_tool_call("bash")
+        tracer._accumulate_tool_call("bash", 0)
 
         expected_count = 3
         assert tracer.session.tool_call_counts["bash"] == expected_count
@@ -469,7 +482,7 @@ class TestAccumulateToolCall:
         tracer.session = None
 
         # Should not raise
-        tracer._accumulate_tool_call("bash")
+        tracer._accumulate_tool_call("bash", 0)
 
 
 class TestLogGitDiff:
@@ -572,6 +585,11 @@ class TestFlush:
         tracer.session.total_output_tokens = 200
         tracer.session.total_tokens = 300
         tracer.session.tool_call_counts = {"bash": 3, "read": 2}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 1
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
         tracer.session.error = None
         tracer.session.git_diff = None
         tracer.session.system_prompt = None
@@ -587,7 +605,7 @@ class TestFlush:
             mock_mlflow.log_metric.assert_any_call("total_tokens", 300)
             mock_mlflow.log_metric.assert_any_call("tool_calls.bash", 3)
             mock_mlflow.log_metric.assert_any_call("tool_calls.read", 2)
-            mock_mlflow.log_metric.assert_any_call("total_tool_calls", 5)
+            mock_mlflow.log_metric.assert_any_call("tool_total_calls", 5)
 
     def test_flush_with_error(self) -> None:
         """Test flush when session has error."""
@@ -596,6 +614,16 @@ class TestFlush:
         tracer.session = MagicMock()
         tracer.session.messages = []
         tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
         tracer.session.error = "Something went wrong"
         tracer.session.git_diff = None
         tracer.session.system_prompt = None
@@ -612,6 +640,11 @@ class TestFlush:
         tracer.session = MagicMock()
         tracer.session.messages = []
         tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
         tracer.session.error = None
         tracer.session.git_diff = "diff content"
         tracer.session.system_prompt = None
@@ -630,6 +663,11 @@ class TestFlush:
         tracer.session = MagicMock()
         tracer.session.messages = []
         tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
         tracer.session.error = None
         tracer.session.git_diff = None
         tracer.session.system_prompt = "System prompt content"
@@ -648,6 +686,11 @@ class TestFlush:
         tracer.session = MagicMock()
         tracer.session.messages = []
         tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
         tracer.session.error = None
         tracer.session.git_diff = "diff content"
         tracer.session.system_prompt = "System prompt content"
