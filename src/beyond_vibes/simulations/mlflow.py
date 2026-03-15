@@ -154,7 +154,7 @@ class MlflowTracer:
             logger.error("Failed to start MLflow run: %s", e)
             raise
 
-    def log_message(self, message: dict) -> None:
+    def log_message(self, message: dict) -> None:  # noqa: PLR0912, PLR0915
         """Log a raw message as a span in the trace with accurate timestamps.
 
         Creates a parent span for the message and child spans for each tool call,
@@ -245,6 +245,21 @@ class MlflowTracer:
             }
         )
 
+        # Calculate and log per-message performance metrics
+        perf_metrics = self._calculate_message_metrics(message, output_tokens)
+        if perf_metrics:
+            perf_attrs = {}
+            if perf_metrics.ttft_ms is not None:
+                perf_attrs["perf.ttft_ms"] = perf_metrics.ttft_ms
+            if perf_metrics.generation_time_ms is not None:
+                perf_attrs["perf.generation_time_ms"] = perf_metrics.generation_time_ms
+            if perf_metrics.tps is not None:
+                perf_attrs["perf.tps"] = perf_metrics.tps
+            perf_attrs["perf.has_tool_calls"] = perf_metrics.has_tool_calls
+            if perf_attrs:
+                parent_span.set_attributes(perf_attrs)
+            self.session.message_metrics.append(perf_metrics)
+
         # Propagate tool errors to parent span
         if has_tool_error:
             parent_span.set_status("ERROR")
@@ -260,11 +275,6 @@ class MlflowTracer:
         self.session.total_input_tokens += input_tokens
         self.session.total_output_tokens += output_tokens
         self.session.total_tokens += total_tokens
-
-        # Calculate performance metrics for this message
-        perf_metrics = self._calculate_message_metrics(message, output_tokens)
-        if perf_metrics:
-            self.session.message_metrics.append(perf_metrics)
 
         # Append message data to session
         message_data = MessageData(
