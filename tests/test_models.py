@@ -4,6 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from beyond_vibes.model_config import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
+from beyond_vibes.simulations.models import (
+    JudgeMapping,
+    RepositoryConfig,
+    SimulationConfig,
+)
 
 
 def test_model_config_valid() -> None:
@@ -162,3 +167,41 @@ def test_essential_model_configs() -> None:
         "generation_config.json",
     }
     assert ESSENTIAL_MODEL_CONFIGS == expected
+
+
+def test_judge_mapping_validation() -> None:
+    """Test that invalid input values are rejected."""
+    with pytest.raises(ValueError, match="input must be one of"):
+        JudgeMapping(name="guidelines", input="invalid")
+
+    JudgeMapping(name="guidelines", input="git_diff")
+    JudgeMapping(name="tool_efficiency", input="final_message")
+
+
+def test_simulation_config_with_judges() -> None:
+    """Test that SimulationConfig accepts judge mappings."""
+    config = SimulationConfig(
+        name="test",
+        description="Test task",
+        archetype="repo_maintenance",
+        repository=RepositoryConfig(url="http://example.com"),
+        prompt="Test prompt",
+        judges=[JudgeMapping(name="guidelines", input="git_diff")],
+        guidelines=["Do X", "Don't Y"],
+    )
+    assert len(config.judges) == 1
+    assert config.judges[0].name == "guidelines"
+    assert config.guidelines == ["Do X", "Don't Y"]
+
+
+def test_simulation_config_defaults() -> None:
+    """Test that SimulationConfig has empty defaults for guidelines and judges."""
+    config = SimulationConfig(
+        name="test",
+        description="Test task",
+        archetype="repo_maintenance",
+        repository=RepositoryConfig(url="http://example.com"),
+        prompt="Test prompt",
+    )
+    assert config.guidelines == []
+    assert config.judges == []

@@ -3,7 +3,7 @@
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     mlflow_tracking_username: str | None = None
     mlflow_tracking_password: str | None = None
     mlflow_enable_system_metrics_logging: bool = True
+    judge_model: str = Field(
+        default="openai:/gpt-4o-mini",
+        description="Judge LLM model (OpenAI format, supports litellm)",
+    )
+    judge_api_key: str | None = Field(
+        default=None,
+        description="API key for judge model (OpenRouter, etc.)",
+    )
+    judge_base_url: str | None = Field(
+        default=None,
+        description="Base URL for OpenAI-compatible endpoint (litellm, vLLM)",
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod
