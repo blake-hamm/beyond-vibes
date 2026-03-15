@@ -34,6 +34,17 @@ class MessageData:
     raw_message: dict | None = None
 
 
+@dataclass
+class MessagePerformanceMetrics:
+    """Performance metrics for a single message."""
+
+    ttft_ms: float | None = None
+    generation_time_ms: float | None = None
+    tps: float | None = None
+    output_tokens: int = 0
+    has_tool_calls: bool = False
+
+
 class SimulationSession(BaseModel):
     """Complete simulation session data."""
 
@@ -68,6 +79,10 @@ class SimulationSession(BaseModel):
     tool_error_rate: float | None = None
     token_efficiency: float | None = None
     cost_efficiency: float | None = None
+    message_metrics: list[MessagePerformanceMetrics] = Field(default_factory=list)
+    avg_ttft_ms: float | None = None
+    avg_tps: float | None = None
+    total_generation_time_ms: float | None = None
 
 
 class MlflowTracer:
@@ -246,6 +261,11 @@ class MlflowTracer:
         self.session.total_output_tokens += output_tokens
         self.session.total_tokens += total_tokens
 
+        # Calculate performance metrics for this message
+        perf_metrics = self._calculate_message_metrics(message, output_tokens)
+        if perf_metrics:
+            self.session.message_metrics.append(perf_metrics)
+
         # Append message data to session
         message_data = MessageData(
             message_index=message_index,
@@ -394,6 +414,64 @@ class MlflowTracer:
 
         self.session.tool_call_counts[tool_name] += 1
 
+    def _calculate_message_metrics(
+        self,
+        message: dict,
+        output_tokens: int,
+    ) -> MessagePerformanceMetrics | None:
+        """Calculate performance metrics (TTFT, TPS, generation time) for a message.
+
+        Excludes tool execution time from calculations.
+        Returns None if timing data is insufficient.
+        """
+        info = message.get("info", {})
+        time_info = info.get("time", {})
+        message_created_ms = time_info.get("created")
+        message_completed_ms = time_info.get("completed")
+
+        if message_created_ms is None or message_completed_ms is None:
+            return None
+
+        # Find the first content part (text or reasoning) with timing
+        parts = message.get("parts", [])
+        first_content_start_ms = None
+        has_tool_calls = False
+
+        for part in parts:
+            part_type = part.get("type", "")
+            if part_type == "tool":
+                has_tool_calls = True
+
+            if part_type in ("text", "reasoning"):
+                part_time = part.get("time")
+                if part_time and part_time.get("start"):
+                    first_content_start_ms = part_time.get("start")
+                    break
+
+        if first_content_start_ms is None:
+            return None
+
+        # Calculate TTFT: time from message created to first content
+        ttft_ms = first_content_start_ms - message_created_ms
+
+        # For TPS calculation, exclude messages with tool calls
+        # (tool execution contaminates the generation time)
+        tps = None
+        generation_time_ms = None
+
+        if not has_tool_calls and output_tokens > 0:
+            generation_time_ms = message_completed_ms - first_content_start_ms
+            if generation_time_ms > 0:
+                tps = (output_tokens / generation_time_ms) * 1000  # tokens per second
+
+        return MessagePerformanceMetrics(
+            ttft_ms=ttft_ms,
+            generation_time_ms=generation_time_ms,
+            tps=tps,
+            output_tokens=output_tokens,
+            has_tool_calls=has_tool_calls,
+        )
+
     def log_git_diff(self, diff_content: str) -> None:
         """Log git diff as an artifact."""
         if self.session is None:
@@ -431,7 +509,7 @@ class MlflowTracer:
 
         self.session.completion_status = status
 
-    def _flush(self) -> None:
+    def _flush(self) -> None:  # noqa: PLR0912, PLR0915
         """Flush all accumulated data to MLflow."""
         if not self.run_id or self.session is None:
             return
@@ -484,9 +562,30 @@ class MlflowTracer:
             self.session.total_messages, 1
         )
 
+        # Calculate aggregated performance metrics
+        if self.session.message_metrics:
+            ttft_values = [
+                m.ttft_ms for m in self.session.message_metrics if m.ttft_ms is not None
+            ]
+            tps_values = [
+                m.tps for m in self.session.message_metrics if m.tps is not None
+            ]
+            generation_times = [
+                m.generation_time_ms
+                for m in self.session.message_metrics
+                if m.generation_time_ms is not None
+            ]
+
+            if ttft_values:
+                self.session.avg_ttft_ms = sum(ttft_values) / len(ttft_values)
+            if tps_values:
+                self.session.avg_tps = sum(tps_values) / len(tps_values)
+            if generation_times:
+                self.session.total_generation_time_ms = sum(generation_times)
+
         # Log trace summary as JSON artifact for evaluators
-        trace_summary = self.session.model_dump(mode="json")
-        mlflow.log_dict(trace_summary, "trace_summary.json")
+        trace_session = self.session.model_dump(mode="json")
+        mlflow.log_dict(trace_session, "trace_session.json")
 
         # Log computed metrics for MLflow UI
         mlflow.log_metric(
@@ -498,6 +597,16 @@ class MlflowTracer:
         mlflow.log_metric("tool_error_rate", self.session.tool_error_rate)
         mlflow.log_metric("token_efficiency", self.session.token_efficiency)
         mlflow.log_metric("cost_efficiency", self.session.cost_efficiency)
+
+        # Log performance metrics
+        if self.session.avg_ttft_ms is not None:
+            mlflow.log_metric("avg_ttft_ms", self.session.avg_ttft_ms)
+        if self.session.avg_tps is not None:
+            mlflow.log_metric("avg_tps", self.session.avg_tps)
+        if self.session.total_generation_time_ms is not None:
+            mlflow.log_metric(
+                "total_generation_time_ms", self.session.total_generation_time_ms
+            )
 
         # Set tags for filtering (in addition to metrics)
         mlflow.set_tag("run.status", "error" if self.session.error else "success")
