@@ -1,3 +1,3 @@
 - TTFT and TPS is also factoring in tool call
 - Guidelines and tool call efficiency should be based on traces - https://mlflow.org/docs/latest/genai/eval-monitor/running-evaluation/traces/ (one per trace)
-- 
+- Traces aren't saved properly (input is nonsense/output is reasoning)
