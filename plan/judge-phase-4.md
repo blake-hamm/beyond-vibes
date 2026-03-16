@@ -468,15 +468,15 @@ def test_extract_real_run():
 
 ## Success Criteria
 
-- [ ] `models.py` exists with `JudgeInput` and `EvalResult` dataclasses
-- [ ] `extractor.py` exists with all extraction functions
-- [ ] Can load trace_session.json from MLflow run
-- [ ] Can extract final message from trace data
-- [ ] Can query runs by experiment, task, archetype
-- [ ] Fallback trace provided if trace_session.json missing
-- [ ] `__init__.py` exports extractor functions
-- [ ] All unit tests pass
-- [ ] Integration test with real run works
+- [x] `models.py` exists with `JudgeInput` and `EvalResult` dataclasses
+- [x] `extractor.py` exists with all extraction functions
+- [x] Can load trace_session.json from MLflow run
+- [x] Can extract final message from trace data
+- [x] Can query runs by experiment, task, archetype
+- [x] Fallback trace provided if trace_session.json missing
+- [x] `__init__.py` exports extractor functions (EvalResult and JudgeInput also exported)
+- [x] All 17 unit tests pass
+- [ ] Integration test with real run works (deferred to later)
 
 ---
 

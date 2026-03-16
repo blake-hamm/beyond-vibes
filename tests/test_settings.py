@@ -70,11 +70,13 @@ def test_judge_settings_defaults() -> None:
             "S3_ENDPOINT": "https://s3.example.com",
             "S3_ACCESS_KEY": "test-access-key",
             "S3_SECRET_KEY": "test-secret-key",
+            "JUDGE_API_KEY": "",  # Override any .env file value
+            "JUDGE_BASE_URL": "",  # Override any .env file value
         },
         clear=True,
     ):
         settings = Settings()
-        assert settings.judge_model == "openai:/gpt-4o-mini"
+        assert settings.judge_model == "openai:/openai/gpt-4o-mini"
         assert settings.judge_api_key is None
         assert settings.judge_base_url is None
 

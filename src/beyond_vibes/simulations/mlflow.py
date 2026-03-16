@@ -177,6 +177,7 @@ class MlflowTracer:
             name=f"message_{message_index}",
             span_type=SpanType.AGENT,
             start_time_ns=parent_start_ns,
+            attributes={"run_id": self.run_id},
             metadata={"mlflow.trace.session": self.session.session_id},
         )
 

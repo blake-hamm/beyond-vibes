@@ -20,7 +20,7 @@ class JudgeMapping(BaseModel):
     @classmethod
     def validate_input(cls, v: str) -> str:
         """Validate that input is one of the allowed values."""
-        allowed = {"git_diff", "final_message"}
+        allowed = {"git_diff", "final_message", "trace"}
         if v not in allowed:
             raise ValueError(f"input must be one of {allowed}, got {v}")
         return v

@@ -1,6 +1,21 @@
 name: "unit_tests"
 description: "Create unit test coverage"
 archetype: "repo_maintenance"
+
+# Evaluation criteria
+guidelines:
+  - "Tests must cover the main functionality of the module"
+  - "Tests should use pytest framework"
+  - "Test files should be in tests/ directory"
+  - "Tests should have meaningful assertions"
+
+# Judges to run on this task
+judges:
+  - name: guidelines
+    input: git_diff
+  - name: tool_efficiency
+    input: trace
+
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"

@@ -11,12 +11,12 @@ judges:
 
   faithfulness:
     type: mlflow.third_party
-    module: mlflow.metrics.deepeval
+    module: mlflow.genai.scorers.deepeval
     class: Faithfulness
     description: "POC: Measures if git diff is faithful to task (using diff as context)"
 
   answer_relevancy:
     type: mlflow.third_party
-    module: mlflow.metrics.deepeval
+    module: mlflow.genai.scorers.deepeval
     class: AnswerRelevancy
     description: "POC: Measures if git diff is relevant to task"

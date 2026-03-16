@@ -1,6 +1,22 @@
 name: "poetry_to_uv"
 description: "Migrate a project from poetry to uv"
 archetype: "repo_maintenance"
+
+# Evaluation criteria
+guidelines:
+  - "The pyproject.toml must not contain [tool.poetry] sections"
+  - "The poetry.lock file must be removed or replaced with uv.lock"
+  - "The project must be installable with `uv sync`"
+
+# Judges to run on this task
+judges:
+  - name: guidelines
+    input: git_diff  # Evaluates git diff against guidelines
+  - name: tool_efficiency
+    input: trace     # Uses trace metrics
+  - name: faithfulness
+    input: git_diff  # POC: DeepEval on git diff
+
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"

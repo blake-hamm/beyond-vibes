@@ -284,12 +284,13 @@ dependencies = [
 
 ## Success Criteria
 
-- [ ] `JudgeMapping` model validates input field (only allows git_diff/final_message)
-- [ ] `SimulationConfig` has `guidelines` and `judges` fields with empty defaults
-- [ ] `judges.yaml` registry file exists with valid schema
-- [ ] Settings class has `judge_model`, `judge_api_key`, `judge_base_url` fields
-- [ ] Environment variables `JUDGE_*` load correctly into settings
-- [ ] All tests pass for models and settings
+- [x] `JudgeMapping` model validates input field (only allows git_diff/final_message)
+- [x] `SimulationConfig` has `guidelines` and `judges` fields with empty defaults
+- [x] `judges.yaml` registry file exists with valid schema
+- [x] Settings class has `judge_model`, `judge_api_key`, `judge_base_url` fields
+- [x] Environment variables `JUDGE_*` load correctly into settings
+- [x] `.env.example` updated with judge configuration examples
+- [x] All tests pass for models and settings (155 tests passing)
 
 ---
 
