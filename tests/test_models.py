@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from beyond_vibes.model_config import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
 from beyond_vibes.simulations.models import (
-    JudgeMapping,
     RepositoryConfig,
     SimulationConfig,
 )
@@ -169,33 +168,21 @@ def test_essential_model_configs() -> None:
     assert ESSENTIAL_MODEL_CONFIGS == expected
 
 
-def test_judge_mapping_validation() -> None:
-    """Test that invalid input values are rejected."""
-    with pytest.raises(ValueError, match="input must be one of"):
-        JudgeMapping(name="guidelines", input="invalid")
-
-    JudgeMapping(name="guidelines", input="git_diff")
-    JudgeMapping(name="tool_efficiency", input="final_message")
-
-
-def test_simulation_config_with_judges() -> None:
-    """Test that SimulationConfig accepts judge mappings."""
+def test_simulation_config_with_guidelines() -> None:
+    """Test that SimulationConfig accepts guidelines as dict."""
     config = SimulationConfig(
         name="test",
         description="Test task",
         archetype="repo_maintenance",
         repository=RepositoryConfig(url="http://example.com"),
         prompt="Test prompt",
-        judges=[JudgeMapping(name="guidelines", input="git_diff")],
-        guidelines=["Do X", "Don't Y"],
+        guidelines={"do_x": "Do X", "dont_y": "Don't Y"},
     )
-    assert len(config.judges) == 1
-    assert config.judges[0].name == "guidelines"
-    assert config.guidelines == ["Do X", "Don't Y"]
+    assert config.guidelines == {"do_x": "Do X", "dont_y": "Don't Y"}
 
 
 def test_simulation_config_defaults() -> None:
-    """Test that SimulationConfig has empty defaults for guidelines and judges."""
+    """Test that SimulationConfig has empty defaults for guidelines."""
     config = SimulationConfig(
         name="test",
         description="Test task",
@@ -203,5 +190,4 @@ def test_simulation_config_defaults() -> None:
         repository=RepositoryConfig(url="http://example.com"),
         prompt="Test prompt",
     )
-    assert config.guidelines == []
-    assert config.judges == []
+    assert config.guidelines == {}

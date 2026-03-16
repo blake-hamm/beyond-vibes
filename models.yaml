@@ -2,8 +2,8 @@ bucket: beyond-vibes
 models:
   - name: kimi-k2.5
     provider: opencode
-  - name: minimax-m2.5
-    provider: opencode-go
+  - name: minimax-m2.5-free
+    provider: opencode
   - name: qwen3-0.6B
     provider: local
     repo_id: unsloth/Qwen3-0.6B-GGUF

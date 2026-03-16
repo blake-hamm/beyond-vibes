@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     mlflow_tracking_password: str | None = None
     mlflow_enable_system_metrics_logging: bool = True
     judge_model: str = Field(
-        default="openai:/openai/gpt-4o-mini",
+        default="openai:/openai/gpt-4o",
         description=(
             "Judge LLM model (OpenAI format for OpenRouter, "
-            "e.g., 'openai:/openai/gpt-4o-mini')"
+            "e.g., 'openai:/openai/gpt-4o')"
         ),
     )
     judge_api_key: str | None = Field(

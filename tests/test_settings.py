@@ -76,7 +76,7 @@ def test_judge_settings_defaults() -> None:
         clear=True,
     ):
         settings = Settings()
-        assert settings.judge_model == "openai:/openai/gpt-4o-mini"
+        assert settings.judge_model == "openai:/openai/gpt-4o"
         assert settings.judge_api_key is None
         assert settings.judge_base_url is None
 
