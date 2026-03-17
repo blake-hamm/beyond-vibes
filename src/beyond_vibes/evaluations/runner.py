@@ -1,7 +1,6 @@
 """Evaluation runner for running Guidelines scorer on simulation runs."""
 
 import fnmatch
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +10,7 @@ import mlflow
 from mlflow.genai.scorers import Guidelines
 
 from beyond_vibes.evaluations.extractor import extract_run_data
+from beyond_vibes.evaluations.models import EvalResult, EvaluationArtifact
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations.prompts.loader import load_task_config
 
@@ -248,11 +248,12 @@ def evaluate_run(run_id: str, judge_model: str | None = None) -> dict[str, Any]:
         score = _extract_feedback_score(feedback)
         rationale = getattr(feedback, "rationale", None) or ""
 
-        guideline_results[guideline_name] = {
-            "criteria": guideline_criteria,
-            "score": score,
-            "rationale": rationale,
-        }
+        guideline_results[guideline_name] = EvalResult(
+            name=guideline_name,
+            score=score,
+            rationale=rationale,
+            criteria=guideline_criteria,
+        )
         scores.append(score)
 
         logger.info(f"Guideline '{guideline_name}': score={score:.2f}")
@@ -261,24 +262,24 @@ def evaluate_run(run_id: str, judge_model: str | None = None) -> dict[str, Any]:
     avg_score = sum(scores) / len(scores) if scores else 0.0
 
     # Prepare evaluation results
-    results = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "run_id": run_id,
-        "task_name": task_config.name,
-        "model": model,
-        "guidelines": guideline_results,
-        "average_score": avg_score,
-        "git_diff_original_length": original_length,
-        "git_diff_filtered_length": filtered_length,
-        "git_diff_filtered": filtered_length < original_length,
-    }
+    artifact = EvaluationArtifact(
+        timestamp=datetime.utcnow().isoformat(),
+        run_id=run_id,
+        task_name=task_config.name,
+        model=model,
+        guidelines=guideline_results,
+        average_score=avg_score,
+        git_diff_original_length=original_length,
+        git_diff_filtered_length=filtered_length,
+        git_diff_filtered=filtered_length < original_length,
+    )
 
     # Log to existing run
     with mlflow.start_run(run_id=run_id):
         # Log individual guideline scores
         for guideline_name, result in guideline_results.items():
             metric_name = f"guidelines_{guideline_name}_score"
-            mlflow.log_metric(metric_name, result["score"])
+            mlflow.log_metric(metric_name, result.score)
 
         # Log average score
         mlflow.log_metric("guidelines_average_score", avg_score)
@@ -286,7 +287,7 @@ def evaluate_run(run_id: str, judge_model: str | None = None) -> dict[str, Any]:
         # Log artifact with full results
         artifact_path = Path("evaluation_results.json")
         with artifact_path.open("w") as f:
-            json.dump(results, f, indent=2)
+            f.write(artifact.model_dump_json(indent=2))
         mlflow.log_artifact(str(artifact_path))
         artifact_path.unlink()  # Clean up temp file
 
