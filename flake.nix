@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    llm-agents.url = "github:numtide/llm-agents.nix?rev=680eb21182e45eb647eb1e64144ffcd484707321";
   };
 
     outputs = { nixpkgs, self, ... } @ inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } {
@@ -22,6 +23,7 @@
                         python312Packages.jupyterlab
                         python312Packages.pip
                         ruff
+                        inputs.llm-agents.packages.${system}.opencode
                     ];
 
                     # Required for building C extensions
