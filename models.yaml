@@ -1,7 +1,7 @@
 bucket: beyond-vibes
 models:
-  - name: kimi-k2.5
-    provider: opencode
+  - name: k2p6
+    provider: kimi-for-coding
   - name: minimax-m2.5-free
     provider: opencode
   - name: qwen3-0.6B

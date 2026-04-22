@@ -12,7 +12,7 @@ guidelines:
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
-agent: "build"
+agent: "orchestrator"
 max_turns: 50
 capture_git_diff: true
 system_prompt: |

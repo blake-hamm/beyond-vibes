@@ -13,6 +13,20 @@ from beyond_vibes.simulations.sandbox import SandboxManager
 logger = logging.getLogger(__name__)
 
 
+def _has_meaningful_content(msg: dict) -> bool:
+    """Check if a message has any non-empty parts (text, reasoning, or tool)."""
+    parts = msg.get("parts", [])
+    if not parts:
+        return False
+    for part in parts:
+        part_type = part.get("type", "")
+        if part_type in ("text", "reasoning") and part.get("text"):
+            return True
+        if part_type == "tool":
+            return True
+    return False
+
+
 class SimulationOrchestrator:
     """Handles polling and message deduplication for simulation runs."""
 
@@ -82,11 +96,17 @@ class SimulationOrchestrator:
                             self._seen_message_ids.add(msg_id)
                             # Count assistant messages
                             if msg.get("info", {}).get("role") == "assistant":
-                                self._assistant_message_count += 1
+                                has_content = _has_meaningful_content(msg)
+                                if has_content:
+                                    self._assistant_message_count += 1
                                 # Check if this message signals completion
-                                if msg.get("info", {}).get("finish") == "stop":
+                                if (
+                                    msg.get("info", {}).get("finish") == "stop"
+                                    and not has_content
+                                ):
                                     logger.info(
-                                        "Stop signal in msg %s, ending session %s",
+                                        "Stop signal in empty msg %s, "
+                                        "ending session %s",
                                         msg_id,
                                         self._session_id,
                                     )
