@@ -4,6 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from beyond_vibes.model_config import ESSENTIAL_MODEL_CONFIGS, Config, ModelConfig
+from beyond_vibes.simulations.models import (
+    RepositoryConfig,
+    SimulationConfig,
+)
 
 
 def test_model_config_valid() -> None:
@@ -162,3 +166,28 @@ def test_essential_model_configs() -> None:
         "generation_config.json",
     }
     assert ESSENTIAL_MODEL_CONFIGS == expected
+
+
+def test_simulation_config_with_guidelines() -> None:
+    """Test that SimulationConfig accepts guidelines as dict."""
+    config = SimulationConfig(
+        name="test",
+        description="Test task",
+        archetype="repo_maintenance",
+        repository=RepositoryConfig(url="http://example.com"),
+        prompt="Test prompt",
+        guidelines={"do_x": "Do X", "dont_y": "Don't Y"},
+    )
+    assert config.guidelines == {"do_x": "Do X", "dont_y": "Don't Y"}
+
+
+def test_simulation_config_defaults() -> None:
+    """Test that SimulationConfig has empty defaults for guidelines."""
+    config = SimulationConfig(
+        name="test",
+        description="Test task",
+        archetype="repo_maintenance",
+        repository=RepositoryConfig(url="http://example.com"),
+        prompt="Test prompt",
+    )
+    assert config.guidelines == {}

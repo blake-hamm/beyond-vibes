@@ -70,3 +70,19 @@ class SandboxManager:
     def path(self) -> Path | None:
         """Get the current workspace path."""
         return self.workspace
+
+    def get_git_diff(self) -> str:
+        """Get git diff of working directory vs HEAD.
+
+        Returns:
+            Diff string or empty string if no changes/not a git repo.
+
+        """
+        if self.workspace is None or not self.workspace.exists():
+            return ""
+
+        try:
+            repo = Repo(self.workspace)
+            return repo.git.diff("HEAD")
+        except Exception:
+            return ""

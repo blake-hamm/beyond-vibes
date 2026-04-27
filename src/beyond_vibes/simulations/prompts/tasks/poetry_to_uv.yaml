@@ -1,11 +1,16 @@
 name: "poetry_to_uv"
 description: "Migrate a project from poetry to uv"
 archetype: "repo_maintenance"
+guidelines:
+  no_poetry_sections: "The pyproject.toml must not contain [tool.poetry] sections"
+  poetry_lock_removed: "The poetry.lock file must be removed"
+  uv_lock_present: "The uv.lock file must be present"
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
-agent: "build"
-max_turns: 50
+agent: "orchestrator"
+max_turns: 25
+capture_git_diff: true
 system_prompt: |
   You are running on NixOS. Never ask for human feedback or confirmation.
   Just proceed with the best approach and explain what you did afterward.

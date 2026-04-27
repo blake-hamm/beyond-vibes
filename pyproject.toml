@@ -21,6 +21,8 @@ dependencies = [
     "httpx>=0.28.1",
     "boto3>=1.42.57",
     "psutil>=7.2.2",
+    "deepeval>=0.21.0",
+    "litellm>=1.0.0",
 ]
 
 [project.scripts]

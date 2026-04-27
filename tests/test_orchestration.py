@@ -22,7 +22,7 @@ def mock_simulation_config() -> SimulationConfig:
         archetype="test",
         repository=RepositoryConfig(url="https://github.com/test/repo", branch="main"),
         prompt="Test prompt",
-        agent="build",
+        agent="orchestrator",
         max_turns=10,
     )
 
@@ -100,7 +100,7 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="build",
+                agent="orchestrator",
                 max_turns=5,
             )
         )
@@ -130,7 +130,7 @@ class TestSimulationOrchestratorRun:
                     prompt="Test prompt",
                     model_id="test-model",
                     provider="local",
-                    agent="build",
+                    agent="orchestrator",
                 )
             )
 
@@ -168,7 +168,7 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="build",
+                agent="orchestrator",
                 max_turns=5,
             )
         )
@@ -191,14 +191,15 @@ class TestSimulationOrchestratorRun:
 
         mock_opencode.create_session.return_value = "session-123"
 
-        # Create messages up to max_turns
+        # Create messages up to max_turns (with content so they count)
         mock_messages = [
             {
                 "info": {
                     "id": f"msg-{i}",
                     "role": "assistant",
                     "time": {"completed": 1234567890},
-                }
+                },
+                "parts": [{"type": "text", "text": f"Response {i}"}],
             }
             for i in range(5)
         ]
@@ -214,7 +215,7 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="build",
+                agent="orchestrator",
                 max_turns=3,
             )
         )
@@ -267,7 +268,7 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="build",
+                agent="orchestrator",
             )
         )
 
@@ -300,10 +301,67 @@ class TestSimulationOrchestratorRun:
                     prompt="Test prompt",
                     model_id="test-model",
                     provider="local",
-                    agent="build",
+                    agent="orchestrator",
                 )
             )
 
+        mock_opencode.abort_session.assert_called_once_with("session-123")
+
+    def test_run_stop_with_content_continues(self) -> None:
+        """Test that finish=stop with content does not abort the session."""
+        mock_opencode = MagicMock()
+        mock_tracer = MagicMock()
+        mock_sandbox = MagicMock()
+
+        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+
+        mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
+            return_value=Path("/tmp/test")
+        )
+        mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_opencode.create_session.return_value = "session-123"
+
+        # Assistant message with finish=stop but has text content
+        content_message = {
+            "info": {
+                "id": "msg-1",
+                "role": "assistant",
+                "time": {"completed": 1234567890},
+                "finish": "stop",
+            },
+            "parts": [{"type": "text", "text": "I will now use a tool"}],
+        }
+        # Followed by an empty stop message (orchestrator loop)
+        empty_message = {
+            "info": {
+                "id": "msg-2",
+                "role": "assistant",
+                "time": {"completed": 1234567891},
+                "finish": "stop",
+            },
+        }
+        mock_opencode.get_messages.side_effect = [
+            [content_message],
+            [content_message, empty_message],
+        ]
+        mock_opencode.abort_session.return_value = True
+
+        messages = list(
+            orchestrator.run(
+                repo_url="https://github.com/test/repo",
+                branch="main",
+                prompt="Test prompt",
+                model_id="test-model",
+                provider="local",
+                agent="orchestrator",
+                max_turns=5,
+            )
+        )
+
+        # Should yield both messages and abort on the empty one
+        expected_messages = 2
+        assert len(messages) == expected_messages
         mock_opencode.abort_session.assert_called_once_with("session-123")
 
     def test_run_no_stop_signal(self) -> None:
@@ -321,14 +379,15 @@ class TestSimulationOrchestratorRun:
 
         mock_opencode.create_session.return_value = "session-123"
 
-        # Messages without stop signal
+        # Messages without stop signal (with content so they count toward max_turns)
         mock_messages = [
             {
                 "info": {
                     "id": "msg-1",
                     "role": "assistant",
                     "time": {"completed": 1234567890},
-                }
+                },
+                "parts": [{"type": "text", "text": "Working on it"}],
             }
         ]
         mock_opencode.get_messages.side_effect = [mock_messages, mock_messages]
@@ -342,7 +401,7 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="build",
+                agent="orchestrator",
                 max_turns=1,
             )
         )

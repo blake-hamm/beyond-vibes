@@ -13,6 +13,20 @@ from beyond_vibes.simulations.sandbox import SandboxManager
 logger = logging.getLogger(__name__)
 
 
+def _has_meaningful_content(msg: dict) -> bool:
+    """Check if a message has any non-empty parts (text, reasoning, or tool)."""
+    parts = msg.get("parts", [])
+    if not parts:
+        return False
+    for part in parts:
+        part_type = part.get("type", "")
+        if part_type in ("text", "reasoning") and part.get("text"):
+            return True
+        if part_type == "tool":
+            return True
+    return False
+
+
 class SimulationOrchestrator:
     """Handles polling and message deduplication for simulation runs."""
 
@@ -29,8 +43,14 @@ class SimulationOrchestrator:
         self._seen_message_ids: set[str] = set()
         self._assistant_message_count: int = 0
         self._session_id: str | None = None
+        self._completion_status: str | None = None
 
-    def run(  # noqa: PLR0913
+    @property
+    def completion_status(self) -> str | None:
+        """Return the completion status of the simulation."""
+        return self._completion_status
+
+    def run(  # noqa: PLR0912, PLR0913
         self,
         repo_url: str,
         branch: str,
@@ -39,6 +59,7 @@ class SimulationOrchestrator:
         provider: str,
         agent: str,
         max_turns: int = 75,
+        capture_git_diff: bool = False,
     ) -> Generator[dict, None, None]:
         """Run simulation and yield new messages as they arrive."""
         with self.sandbox.sandbox(url=repo_url, branch=branch) as working_dir:
@@ -75,14 +96,21 @@ class SimulationOrchestrator:
                             self._seen_message_ids.add(msg_id)
                             # Count assistant messages
                             if msg.get("info", {}).get("role") == "assistant":
-                                self._assistant_message_count += 1
+                                has_content = _has_meaningful_content(msg)
+                                if has_content:
+                                    self._assistant_message_count += 1
                                 # Check if this message signals completion
-                                if msg.get("info", {}).get("finish") == "stop":
+                                if (
+                                    msg.get("info", {}).get("finish") == "stop"
+                                    and not has_content
+                                ):
                                     logger.info(
-                                        "Stop signal in msg %s, ending session %s",
+                                        "Stop signal in empty msg %s, "
+                                        "ending session %s",
                                         msg_id,
                                         self._session_id,
                                     )
+                                    self._completion_status = "completed"
                                     self.opencode.abort_session(self._session_id)
                                     return
 
@@ -93,15 +121,25 @@ class SimulationOrchestrator:
                             max_turns,
                             self._session_id,
                         )
+                        self._completion_status = "max_turns"
                         self.opencode.abort_session(self._session_id)
                         break
 
                     time.sleep(5)
             except Exception:
                 logger.exception("Simulation interrupted, aborting session")
+                self._completion_status = "error"
                 if self._session_id:
                     self.opencode.abort_session(self._session_id)
                 raise
+            finally:
+                if capture_git_diff:
+                    diff = self.sandbox.get_git_diff()
+                    if diff:
+                        self.tracer.log_git_diff(diff)
+                        logger.info("Git diff captured (%d bytes)", len(diff))
+                    else:
+                        logger.debug("No git diff to capture (no changes)")
 
 
 def run_simulation(  # noqa: PLR0913
@@ -116,6 +154,7 @@ def run_simulation(  # noqa: PLR0913
     error_occurred = False
     try:
         with tracer.log_simulation(sim_config, model_config) as logger_ctx:
+            logger_ctx.log_system_prompt(prompt)
             orchestrator = SimulationOrchestrator(opencode_client, tracer, sandbox)
 
             for message in orchestrator.run(
@@ -126,8 +165,13 @@ def run_simulation(  # noqa: PLR0913
                 provider=model_config.provider,
                 agent=sim_config.agent,
                 max_turns=sim_config.max_turns,
+                capture_git_diff=sim_config.capture_git_diff,
             ):
                 logger_ctx.log_message(message)
+
+            # Capture completion status for MLflow tagging
+            if orchestrator.completion_status:
+                tracer.set_completion_status(orchestrator.completion_status)
 
             logger.info("Simulation completed")
 
