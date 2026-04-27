@@ -1,0 +1,12 @@
+{"type":"session","version":3,"id":"019dd11b-a5ce-714a-adf4-478ff4e882c0","timestamp":"2026-04-27T22:42:23.310Z","cwd":"/home/bhamm/repos/beyond-vibes"}
+{"type":"agent_start"}
+{"type":"turn_start"}
+{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Say hello in one word"}],"timestamp":1777329744077}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Say hello in one word"}],"timestamp":1777329744077}}
+{"type":"message_start","message":{"role":"assistant","content":[],"timestamp":1777329744106}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":" fits","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0}]}}}
+{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"The user wants me to say hello in one word.","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0}]}}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":1,"partial":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0}]}}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Hello","partial":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0},{"type":"text","text":"Hello","index":1}]}}}
+{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"Hello","partial":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0},{"type":"text","text":"Hello","index":1}]}}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"The user wants me to say hello in one word.","thinkingSignature":"sig1","index":0},{"type":"text","text":"Hello","index":1}],"api":"anthropic-messages","provider":"kimi-coding","model":"kimi-for-coding","usage":{"input":4634,"output":66,"cacheRead":1792,"cacheWrite":0,"totalTokens":6492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1777329744106,"responseId":"msg_OTKGtprx2JutpeeRM9Snknvs"}}
