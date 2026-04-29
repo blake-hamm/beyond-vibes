@@ -1,18 +1,14 @@
 name: "unit_tests"
 description: "Create unit test coverage"
 archetype: "repo_maintenance"
-
-# Evaluation criteria
 guidelines:
   test_coverage: "Tests must cover the main functionality of the module"
   pytest_framework: "Tests should use pytest framework"
   tests_location: "Test files should be in tests/ directory"
   meaningful_assertions: "Tests should have meaningful assertions"
-
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
-agent: "orchestrator"
 max_turns: 50
 capture_git_diff: true
 system_prompt: |

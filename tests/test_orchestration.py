@@ -22,7 +22,6 @@ def mock_simulation_config() -> SimulationConfig:
         archetype="test",
         repository=RepositoryConfig(url="https://github.com/test/repo", branch="main"),
         prompt="Test prompt",
-        agent="orchestrator",
         max_turns=10,
     )
 
@@ -100,7 +99,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
                 max_turns=5,
             )
         )
@@ -130,7 +128,6 @@ class TestSimulationOrchestratorRun:
                     prompt="Test prompt",
                     model_id="test-model",
                     provider="local",
-                    agent="orchestrator",
                 )
             )
 
@@ -168,7 +165,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
                 max_turns=5,
             )
         )
@@ -215,7 +211,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
                 max_turns=3,
             )
         )
@@ -268,7 +263,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
             )
         )
 
@@ -301,7 +295,6 @@ class TestSimulationOrchestratorRun:
                     prompt="Test prompt",
                     model_id="test-model",
                     provider="local",
-                    agent="orchestrator",
                 )
             )
 
@@ -354,7 +347,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
                 max_turns=5,
             )
         )
@@ -401,7 +393,6 @@ class TestSimulationOrchestratorRun:
                 prompt="Test prompt",
                 model_id="test-model",
                 provider="local",
-                agent="orchestrator",
                 max_turns=1,
             )
         )

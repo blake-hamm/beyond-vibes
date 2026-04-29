@@ -236,8 +236,28 @@ Use this section to record what actually happened as each phase is completed.
 
 **Manual test result:** PASS. `scripts/test_phase1.py` yields correct `TurnData` with stop_reason, usage, and content blocks. Subprocess reaped cleanly.
 
-### Phase 2
-_(Update after implementation)_
+### Phase 2 — COMPLETE
+
+**Implemented:**
+
+1. `src/beyond_vibes/simulations/models.py` — Removed `agent` field from `SimulationConfig`
+2. `src/beyond_vibes/simulations/orchestration.py` — Removed `agent` parameter from `SimulationOrchestrator.run()` and `run_simulation()`
+3. `models.yaml` — Updated provider names to pi-native:
+   - `k2p6` → `provider: kimi-coding`, `model_id: k2p6`
+   - `minimax-m2.5-free` → `provider: minimax`, `model_id: minimax-m2.5-free`
+   - `qwen3-0.6B` → `provider: local` (unchanged, no pi equivalent yet)
+4. Task YAMLs — Removed `agent: "orchestrator"` from `poetry_to_uv.yaml` and `unit_tests.yaml`
+5. `tests/test_orchestration.py` — Removed all `agent="orchestrator"` references
+6. `tests/test_cli.py` — Removed all `sim_config.agent = "build"` references
+
+**Learnings:**
+
+- `k2p6` maps to pi provider `kimi-coding`, model `k2p6` (confirmed via `pi --list-models`)
+- `minimax-m2.5-free` maps to pi provider `minimax`, model `minimax-m2.5-free`
+- No pi-native `local` provider for GGUF models (no ollama/lmstudio provider found in pi v0.68.1). Keeping `local` as a sentinel for now; will need custom handling or `huggingface` provider if running local inference through pi.
+- `ModelConfig.provider` and `ModelConfig.model_id` pass directly to `--provider` and `--model` flags.
+
+**Tests:** All 186 tests pass. Ruff clean.
 
 ### Phase 3
 _(Update after implementation)_

@@ -565,7 +565,6 @@ def test_simulate_successful_execution(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -644,7 +643,6 @@ def test_simulate_error_occurred(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -728,7 +726,6 @@ def test_simulate_provider_filter(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -808,7 +805,6 @@ def test_simulate_custom_quant_tag(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None

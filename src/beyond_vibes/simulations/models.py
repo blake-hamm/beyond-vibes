@@ -18,7 +18,6 @@ class SimulationConfig(BaseModel):
     archetype: str
     repository: RepositoryConfig
     prompt: str
-    agent: str = "orchestrator"
     system_prompt: str | None = None
     max_turns: int = 50
     capture_git_diff: bool = False
