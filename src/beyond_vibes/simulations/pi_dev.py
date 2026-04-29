@@ -32,6 +32,7 @@ class TurnData:
     tool_calls: list[dict] = field(default_factory=list)
     tool_results: list[dict] = field(default_factory=list)
     raw_message: dict | None = None
+    timestamp: int | None = None
 
 
 class PiDevClient:
@@ -51,6 +52,12 @@ class PiDevClient:
         self.stderr_log = Path(stderr_log) if stderr_log else Path("pi_dev_stderr.log")
         self._proc: subprocess.Popen | None = None
         self._timer: threading.Timer | None = None
+        self._max_turns_reached = False
+
+    @property
+    def max_turns_reached(self) -> bool:
+        """Return True if the last run stopped due to max_turns."""
+        return self._max_turns_reached
 
     def run(
         self,
@@ -131,6 +138,7 @@ class PiDevClient:
 
         assistant_count = 0
         current_turn: TurnData | None = None
+        pending_turn: TurnData | None = None
         seen_assistant_end = False
 
         for raw_line in self._proc.stdout:
@@ -148,6 +156,9 @@ class PiDevClient:
             if event_type == "message_start":
                 msg = event.get("message", {})
                 if msg.get("role") == "assistant":
+                    if pending_turn is not None:
+                        yield pending_turn
+                        pending_turn = None
                     current_turn = TurnData(turn_index=assistant_count)
 
             elif event_type == "message_update":
@@ -187,20 +198,25 @@ class PiDevClient:
                     current_turn.content = msg.get("content", [])
                     current_turn.usage = msg.get("usage")
                     current_turn.stop_reason = msg.get("stopReason")
+                    current_turn.timestamp = msg.get("timestamp")
                     current_turn.raw_message = msg
 
-                    yield current_turn
-                    assistant_count += 1
+                    pending_turn = current_turn
                     current_turn = None
+                    assistant_count += 1
 
                     if assistant_count >= max_turns:
                         logger.info("Max turns (%d) reached, terminating pi", max_turns)
+                        self._max_turns_reached = True
                         self._kill()
+                        if pending_turn is not None:
+                            yield pending_turn
                         return
 
             elif event_type == "tool_execution_start":
-                if current_turn is not None:
-                    current_turn.tool_calls.append(
+                target = current_turn if current_turn is not None else pending_turn
+                if target is not None:
+                    target.tool_calls.append(
                         {
                             "toolCallId": event.get("toolCallId"),
                             "toolName": event.get("toolName"),
@@ -209,8 +225,9 @@ class PiDevClient:
                     )
 
             elif event_type == "tool_execution_end":
-                if current_turn is not None:
-                    current_turn.tool_results.append(
+                target = current_turn if current_turn is not None else pending_turn
+                if target is not None:
+                    target.tool_results.append(
                         {
                             "toolCallId": event.get("toolCallId"),
                             "toolName": event.get("toolName"),
@@ -221,6 +238,9 @@ class PiDevClient:
 
         if not seen_assistant_end:
             raise PiDevError("Premature EOF: no assistant message_end events received")
+
+        if pending_turn is not None:
+            yield pending_turn
 
         logger.info("pi stream ended after %d turns", assistant_count)
 

@@ -272,6 +272,97 @@ class TestPiDevClientTimeout:
         mock_killpg.assert_called()
 
 
+@pytest.fixture
+def tool_fixture_lines() -> list[str]:
+    """Load the tool fixture JSONL lines."""
+    fixture_path = Path(__file__).parent / "fixtures" / "pi_dev_tool_output.jsonl"
+    return fixture_path.read_text().strip().split("\n")
+
+
+class TestPiDevClientToolRun:
+    """Tests for run method with tool calls."""
+
+    def test_run_with_tool_calls(self, tool_fixture_lines: list[str]) -> None:
+        """Test that tool calls and results are captured in TurnData."""
+        client = PiDevClient()
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(tool_fixture_lines)
+        mock_proc.pid = 1234
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("os.getpgid", return_value=1234):
+                turns = list(client.run("Read file"))
+
+        expected_turn_count = 2
+        assert len(turns) == expected_turn_count
+
+        # First turn has tool call
+        turn0 = turns[0]
+        assert turn0.turn_index == 0
+        assert turn0.stop_reason == "toolUse"
+        assert len(turn0.tool_calls) == 1
+        assert turn0.tool_calls[0]["toolName"] == "read"
+        assert turn0.tool_calls[0]["args"] == {"path": "/tmp/test.txt"}
+        assert len(turn0.tool_results) == 1
+        assert turn0.tool_results[0]["isError"] is False
+        assert turn0.tool_results[0]["result"]["content"][0]["text"] == "Hello world"
+
+        # Second turn has no tools
+        turn1 = turns[1]
+        assert turn1.turn_index == 1
+        assert turn1.stop_reason == "stop"
+        assert len(turn1.tool_calls) == 0
+        assert len(turn1.tool_results) == 0
+
+    def test_tool_call_without_message_start(self) -> None:
+        """Test tool events are captured even without preceding message_start."""
+        client = PiDevClient()
+        lines = [
+            json.dumps(
+                {
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Hi"}],
+                        "usage": {"input": 10, "output": 5, "totalTokens": 15},
+                        "stopReason": "stop",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "tool_execution_start",
+                    "toolCallId": "tool_1",
+                    "toolName": "bash",
+                    "args": {"command": "ls"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "tool_execution_end",
+                    "toolCallId": "tool_1",
+                    "toolName": "bash",
+                    "result": {"stdout": "file.txt"},
+                    "isError": False,
+                }
+            ),
+        ]
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(lines)
+        mock_proc.pid = 1234
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("os.getpgid", return_value=1234):
+                turns = list(client.run("Test"))
+
+        assert len(turns) == 1
+        assert len(turns[0].tool_calls) == 1
+        assert turns[0].tool_calls[0]["toolName"] == "bash"
+        assert len(turns[0].tool_results) == 1
+
+
 class TestTurnData:
     """Tests for TurnData dataclass."""
 

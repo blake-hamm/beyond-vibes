@@ -12,6 +12,7 @@ from beyond_vibes.simulations.mlflow import (
     generate_session_id,
 )
 from beyond_vibes.simulations.models import RepositoryConfig, SimulationConfig
+from beyond_vibes.simulations.pi_dev import TurnData
 
 
 @pytest.fixture
@@ -23,7 +24,6 @@ def mock_simulation_config() -> SimulationConfig:
         archetype="test",
         repository=RepositoryConfig(url="https://github.com/test/repo", branch="main"),
         prompt="Test prompt",
-        agent="build",
         max_turns=10,
     )
 
@@ -348,6 +348,277 @@ class TestLogMessage:
 
             # Parent span should have ERROR status
             mock_parent_span.set_status.assert_called_with("ERROR")
+
+
+class TestLogTurn:
+    """Tests for log_turn method."""
+
+    @pytest.fixture
+    def mock_turn(self) -> TurnData:
+        """Create a mock TurnData with text content."""
+        return TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Hello world"}],
+            usage={
+                "input": 10,
+                "output": 5,
+                "totalTokens": 15,
+                "cost": {"total": 0.001},
+            },
+            stop_reason="stop",
+            raw_message={"role": "assistant", "responseId": "msg_abc"},
+        )
+
+    def test_log_turn_no_session(self) -> None:
+        """Test logging turn without active session."""
+        tracer = MlflowTracer()
+
+        with patch("beyond_vibes.simulations.mlflow.logger") as mock_logger:
+            tracer.log_turn(TurnData(turn_index=0))
+            mock_logger.warning.assert_called_once()
+
+    def test_log_turn_with_text_content(self, mock_turn: TurnData) -> None:
+        """Test logging turn with text content."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+
+            tracer.log_turn(mock_turn)
+
+            mock_mlflow.start_span_no_context.assert_called_once()
+            content = mock_span.set_outputs.call_args[0][0]["content"][0]
+            assert content["type"] == "text"
+            assert content["content"] == "Hello world"
+            mock_span.end.assert_called_once()
+
+    def test_log_turn_with_thinking_content(self) -> None:
+        """Test logging turn with thinking content."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "thinking", "thinking": "Hmm..."}],
+            usage={},
+            stop_reason="stop",
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+
+            tracer.log_turn(turn)
+
+            content = mock_span.set_outputs.call_args[0][0]["content"][0]
+            assert content["type"] == "thinking"
+            assert content["content"] == "Hmm..."
+
+    def test_log_turn_with_usage(self) -> None:
+        """Test logging turn captures usage attributes."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Hi"}],
+            usage={
+                "input": 100,
+                "output": 50,
+                "totalTokens": 150,
+                "cacheRead": 10,
+                "cacheWrite": 20,
+                "cost": {"total": 0.005},
+            },
+            stop_reason="toolUse",
+            raw_message={"responseId": "msg_xyz"},
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+
+            tracer.log_turn(turn)
+
+            all_attrs = {}
+            for call in mock_span.set_attributes.call_args_list:
+                all_attrs.update(call[0][0])
+            assert all_attrs["llm.token_usage.input_tokens"] == 100  # noqa: PLR2004
+            assert all_attrs["llm.token_usage.output_tokens"] == 50  # noqa: PLR2004
+            assert all_attrs["llm.token_usage.total_tokens"] == 150  # noqa: PLR2004
+            assert all_attrs["llm.token_usage.cache_read_tokens"] == 10  # noqa: PLR2004
+            assert all_attrs["llm.token_usage.cache_write_tokens"] == 20  # noqa: PLR2004
+            assert all_attrs["cost"] == 0.005  # noqa: PLR2004
+            assert all_attrs["stop_reason"] == "toolUse"
+            assert all_attrs["response_id"] == "msg_xyz"
+
+    def test_log_turn_with_tool_calls(self) -> None:
+        """Test logging turn creates child spans for tools."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.tool_call_counts = {}
+        tracer.session.tool_last_name = None
+        tracer.session.tool_consecutive_calls = 0
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Result"}],
+            usage={},
+            tool_calls=[
+                {"toolCallId": "tool_1", "toolName": "bash", "args": {"command": "ls"}}
+            ],
+            tool_results=[
+                {
+                    "toolCallId": "tool_1",
+                    "toolName": "bash",
+                    "result": {"stdout": "file.txt"},
+                    "isError": False,
+                }
+            ],
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_parent = MagicMock()
+            mock_child = MagicMock()
+            mock_mlflow.start_span_no_context.side_effect = [mock_parent, mock_child]
+
+            tracer.log_turn(turn)
+
+            assert mock_mlflow.start_span_no_context.call_count == 2  # noqa: PLR2004
+            child_call = mock_mlflow.start_span_no_context.call_args_list[1]
+            assert child_call[1]["span_type"] == "TOOL"
+            assert child_call[1]["name"] == "tool:bash:tool_1"
+            mock_child.set_outputs.assert_called_once_with(
+                {"output": {"stdout": "file.txt"}}
+            )
+
+    def test_log_turn_with_tool_error(self) -> None:
+        """Test logging turn marks tool span as ERROR."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.tool_error_count = 0
+        tracer.session.error_message_indices = []
+        tracer.session.tool_call_counts = {}
+        tracer.session.tool_last_name = None
+        tracer.session.tool_consecutive_calls = 0
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Error"}],
+            usage={},
+            tool_calls=[
+                {"toolCallId": "tool_1", "toolName": "bash", "args": {"command": "bad"}}
+            ],
+            tool_results=[
+                {
+                    "toolCallId": "tool_1",
+                    "toolName": "bash",
+                    "result": "Command not found",
+                    "isError": True,
+                }
+            ],
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_parent = MagicMock()
+            mock_child = MagicMock()
+            mock_mlflow.start_span_no_context.side_effect = [mock_parent, mock_child]
+
+            tracer.log_turn(turn)
+
+            mock_child.set_status.assert_called_once_with("ERROR")
+            mock_child.add_event.assert_called_once()
+            assert tracer.session.tool_error_count == 1
+
+    def test_log_turn_accumulates_session_totals(self) -> None:
+        """Test that log_turn accumulates cost and token totals."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.total_cost = 0.0
+        tracer.session.total_input_tokens = 0
+        tracer.session.total_output_tokens = 0
+        tracer.session.total_tokens = 0
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Hi"}],
+            usage={
+                "input": 10,
+                "output": 5,
+                "totalTokens": 15,
+                "cost": {"total": 0.001},
+            },
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+            tracer.log_turn(turn)
+
+        assert tracer.session.total_cost == 0.001  # noqa: PLR2004
+        assert tracer.session.total_input_tokens == 10  # noqa: PLR2004
+        assert tracer.session.total_output_tokens == 5  # noqa: PLR2004
+        assert tracer.session.total_tokens == 15  # noqa: PLR2004
+
+    def test_log_turn_appends_message_data(self) -> None:
+        """Test that log_turn appends MessageData to session."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.messages = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=3,
+            content=[{"type": "text", "text": "Hi"}],
+            usage={},
+            raw_message={"role": "assistant"},
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+            tracer.log_turn(turn)
+
+        assert len(tracer.session.messages) == 1  # noqa: PLR2004
+        assert tracer.session.messages[0].message_index == 3  # noqa: PLR2004
+        assert tracer.session.messages[0].raw_message == {"role": "assistant"}
 
 
 class TestExtractTimestamps:

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.models import SimulationConfig
+from beyond_vibes.simulations.pi_dev import TurnData
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +285,149 @@ class MlflowTracer:
             raw_message=message,
         )
         self.session.messages.append(message_data)
+
+    def log_turn(self, turn: TurnData) -> None:
+        """Log a native pi turn as a span in the trace.
+
+        Creates a parent span for the turn and child spans for each tool
+        execution. Accumulates session metrics from turn data.
+        """
+        if self.session is None:
+            logger.warning("No active session to log turn to")
+            return
+
+        turn_index = turn.turn_index
+        span_name = f"turn_{turn_index}"
+
+        parent_span = mlflow.start_span_no_context(
+            name=span_name,
+            span_type=SpanType.AGENT,
+            attributes={"run_id": self.run_id},
+            metadata={"mlflow.trace.session": self.session.session_id},
+        )
+
+        # Extract readable content from turn.content blocks
+        readable_parts = []
+        for block in turn.content:
+            block_type = block.get("type", "")
+            if block_type == "text":
+                text = block.get("text", "")
+                if text:
+                    readable_parts.append({"type": "text", "content": text})
+            elif block_type == "thinking":
+                text = block.get("thinking", "")
+                if text:
+                    readable_parts.append({"type": "thinking", "content": text})
+
+        parent_span.set_inputs({"turn_index": turn_index, "role": "assistant"})
+        parent_span.set_outputs({"content": readable_parts})
+
+        # Token usage from pi-native usage dict
+        usage = turn.usage or {}
+        input_tokens = usage.get("input", 0)
+        output_tokens = usage.get("output", 0)
+        total_tokens = usage.get("totalTokens", input_tokens + output_tokens)
+        cost_info = usage.get("cost", {})
+        cost = cost_info.get("total", 0.0) if isinstance(cost_info, dict) else 0.0
+
+        cache_read = usage.get("cacheRead", 0)
+        cache_write = usage.get("cacheWrite", 0)
+        response_id = turn.raw_message.get("responseId", "") if turn.raw_message else ""
+
+        parent_span.set_attributes(
+            {
+                "llm.token_usage.input_tokens": input_tokens,
+                "llm.token_usage.output_tokens": output_tokens,
+                "llm.token_usage.total_tokens": total_tokens,
+                "llm.token_usage.cache_read_tokens": cache_read,
+                "llm.token_usage.cache_write_tokens": cache_write,
+                "modelID": self.session.llm_config.get_model_id(),
+                "providerID": self.session.llm_config.provider,
+                "cost": cost,
+                "stop_reason": turn.stop_reason or "",
+                "response_id": response_id,
+            }
+        )
+
+        # Create child spans for tool executions
+        results_by_id = {
+            r["toolCallId"]: r for r in turn.tool_results if "toolCallId" in r
+        }
+        for call in turn.tool_calls:
+            call_id = call.get("toolCallId", "")
+            tool_name = call.get("toolName", "unknown")
+            result = results_by_id.get(call_id, {})
+            self._create_tool_span_from_pi(
+                parent_span, tool_name, call_id, call.get("args"), result, turn_index
+            )
+
+        raw_json = json.dumps(turn.raw_message) if turn.raw_message else ""
+        max_raw_len = 4096
+        if len(raw_json) > max_raw_len:
+            raw_json = raw_json[:max_raw_len] + "... [truncated]"
+        parent_span.set_attributes({"raw_message_json": raw_json})
+
+        parent_span.end()
+
+        # Accumulate session totals
+        self.session.total_cost += cost
+        self.session.total_input_tokens += input_tokens
+        self.session.total_output_tokens += output_tokens
+        self.session.total_tokens += total_tokens
+
+        # Append message data to session for trace_session.json
+        message_data = MessageData(
+            message_index=turn_index,
+            timestamp=datetime.now(),
+            raw_message=turn.raw_message or {},
+        )
+        self.session.messages.append(message_data)
+
+    def _create_tool_span_from_pi(  # noqa: PLR0913
+        self,
+        parent_span: Any,  # noqa: ANN401
+        tool_name: str,
+        call_id: str,
+        tool_input: Any,  # noqa: ANN401
+        result: dict,
+        turn_index: int,
+    ) -> None:
+        """Create a child span for a pi tool execution."""
+        span_name = f"tool:{tool_name}:{call_id}"
+
+        child_span = mlflow.start_span_no_context(
+            name=span_name,
+            span_type=SpanType.TOOL,
+            parent_span=parent_span,
+            inputs={"tool": tool_name, "call_id": call_id, "input": tool_input},
+        )
+
+        tool_output = result.get("result")
+        if tool_output is not None:
+            child_span.set_outputs({"output": tool_output})
+
+        is_error = result.get("isError", False)
+        if is_error:
+            child_span.set_status("ERROR")
+            if self.session is not None:
+                self.session.tool_error_count += 1
+                self.session.error_message_indices.append(turn_index)
+
+            error_message = result.get("result", "Tool execution failed")
+            child_span.add_event(
+                SpanEvent(
+                    "exception",
+                    attributes={
+                        "error.message": str(error_message),
+                        "error.type": "tool_execution_error",
+                        "tool.name": tool_name,
+                        "tool.call_id": call_id,
+                    },
+                )
+            )
+
+        self._accumulate_tool_call(tool_name, turn_index)
+        child_span.end()
 
     def _extract_timestamps_ns(
         self,

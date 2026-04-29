@@ -259,11 +259,110 @@ Use this section to record what actually happened as each phase is completed.
 
 **Tests:** All 186 tests pass. Ruff clean.
 
-### Phase 3
-_(Update after implementation)_
+### Phase 3 — COMPLETE
 
-### Phase 4
-_(Update after implementation)_
+**Implemented:**
+
+1. `src/beyond_vibes/simulations/orchestration.py` — Rewritten for streaming
+   - `SimulationOrchestrator` now takes `PiDevClient` instead of `OpenCodeClient`
+   - `run()` iterates over `PiDevClient.run()` yielding `TurnData` directly
+   - No polling loop, no message deduplication, no `time.sleep(5)`
+   - Completion status: `completed` (natural EOF), `max_turns` (`pi_client.max_turns_reached`), `error` (exception)
+   - Git diff capture remains in `finally` block
+   - `system_prompt` passed through to pi CLI
+
+2. `src/beyond_vibes/simulations/mlflow.py` — Added `log_turn()` method
+   - Consumes native `TurnData` instead of OpenCode message dicts
+   - Parent span per turn (`turn_{index}`) with token usage from `turn.usage`
+   - Content blocks mapped to span outputs (`text`, `thinking`)
+   - Tool calls/results matched by `toolCallId`, rendered as child `TOOL` spans
+   - Raw message JSON stored as attribute (truncated to 4KB)
+   - Accumulates session totals for cost, tokens, tool calls
+   - Old `log_message()` kept intact for backward compatibility (will archive in Phase 5)
+
+3. `src/beyond_vibes/cli.py` — Wired to `PiDevClient`
+   - `PiDevClient(provider=model_config.provider, model=model_config.get_model_id())` constructed per simulation
+   - Passed to `run_simulation()` which passes it to `SimulationOrchestrator`
+
+4. `src/beyond_vibes/simulations/pi_dev.py` — Added `max_turns_reached` property and `timestamp` field to `TurnData`
+
+5. `tests/test_orchestration.py` — Completely rewritten for PiDevClient
+   - Tests cover: success, sandbox failure, max_turns, exception, git diff capture, system prompt propagation
+   - `run_simulation` tests verify `log_turn()` calls and error handling
+
+6. `tests/test_cli.py` — Patches updated from `OpenCodeClient` to `PiDevClient`
+
+**Learnings:**
+
+- `PiDevClient` is pre-configured with provider/model, so `orchestrator.run()` no longer needs `model_id`/`provider` params
+- `max_turns_reached` flag is needed to distinguish natural completion from limit hit
+- `_create_tool_span_from_pi()` reuses existing `_accumulate_tool_call()` for loop detection
+- `TurnData.timestamp` captured from `message_end.message.timestamp` (useful for ordering)
+
+**Tests:** 184 tests pass. Ruff clean.
+
+### Phase 4 — COMPLETE
+
+**E2E Validation Results:**
+
+1. `uv run python -m beyond_vibes.cli simulate --task e2e_test --model k2p6`
+   - Completed in ~15s, 1 turn, natural stop
+   - MLflow trace shows `thinking` + `text` content blocks correctly
+   - `stop_reason: stop`, usage populated
+
+2. `uv run python -m beyond_vibes.cli simulate --task unit_tests --model k2p6`
+   - Ran for ~5min, 14 turns, hit max_turns
+   - **BUG FOUND:** No tool calls recorded in MLflow traces
+
+**Root Cause Analysis:**
+
+In `PiDevClient._read_turns()`, when `message_end` (assistant) was received, the code did:
+```python
+yield current_turn
+assistant_count += 1
+current_turn = None  # BUG!
+```
+
+But pi's JSONL stream emits tool events **after** `message_end`:
+```
+message_end(assistant) ← turn yielded here, current_turn = None
+tool_execution_start   ← skipped because current_turn is None
+tool_execution_end     ← skipped because current_turn is None
+turn_end               ← optional
+```
+
+So all tool calls were silently dropped.
+
+**Fix committed:**
+- Introduced `pending_turn` buffer
+- Yield deferred to next `message_start(assistant)` or EOF, not at `message_end`
+- Tool events append to `pending_turn` when `current_turn` is None
+- `turn_end` event does not change behavior (it was already optional)
+
+**Unit tests added:**
+- `TestLogTurn` (8 tests): no session, text content, thinking content, usage attributes, tool calls, tool errors, session accumulation, message data append
+- `TestPiDevClientToolRun` (2 tests): tool call capture with fixture, tool call without message_start
+- `tests/fixtures/pi_dev_tool_output.jsonl`: real tool call sequence fixture
+
+**Additional improvements:**
+- Added `cache_read_tokens`, `cache_write_tokens`, `response_id` to MLflow span attributes
+- Removed `agent="build"` from `mock_simulation_config` fixture (field no longer exists)
+
+**Verified pi data structure for tool calls:**
+- `message_end.content` includes `{"type": "toolCall", "id": "...", "name": "...", "arguments": {...}}`
+- `tool_execution_start` has `toolCallId`, `toolName`, `args`
+- `tool_execution_end` has `toolCallId`, `toolName`, `result`, `isError`
+- `turn_end` includes `toolResults` array (redundant with separate events)
+
+**What's in pi but NOT in MLflow traces:**
+- `session` event (session ID, cwd)
+- `agent_start` / `agent_end` lifecycle
+- `turn_start` / `turn_end` boundaries
+- `thinkingSignature` on thinking blocks
+- `api`, `provider`, `model` on message (redundant with run params)
+- `cost` breakdown per category (only total logged)
+
+**Tests:** 194 tests pass. Ruff clean.
 
 ### Phase 5
 _(Update after implementation)_

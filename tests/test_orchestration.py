@@ -11,6 +11,7 @@ from beyond_vibes.simulations.orchestration import (
     SimulationOrchestrator,
     run_simulation,
 )
+from beyond_vibes.simulations.pi_dev import TurnData
 
 
 @pytest.fixture
@@ -42,81 +43,60 @@ class TestSimulationOrchestratorInit:
 
     def test_init(self) -> None:
         """Test orchestrator initialization."""
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
-        assert orchestrator.opencode == mock_opencode
+        assert orchestrator.pi == mock_pi
         assert orchestrator.tracer == mock_tracer
         assert orchestrator.sandbox == mock_sandbox
-        assert orchestrator._seen_message_ids == set()
-        assert orchestrator._assistant_message_count == 0
-        assert orchestrator._session_id is None
+        assert orchestrator.completion_status is None
 
 
 class TestSimulationOrchestratorRun:
     """Tests for SimulationOrchestrator.run method."""
 
     def test_run_success(self) -> None:
-        """Test successful simulation run."""
-        mock_opencode = MagicMock()
+        """Test successful simulation run yielding TurnData."""
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
-        # Mock sandbox context manager
         mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
             return_value=Path("/tmp/test")
         )
         mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Mock opencode methods
-        mock_opencode.create_session.return_value = "session-123"
-        mock_opencode.send_prompt.return_value = None
+        mock_turn = TurnData(turn_index=0, content=[{"type": "text", "text": "Hi"}])
+        mock_pi.run.return_value = iter([mock_turn])
+        mock_pi.max_turns_reached = False
 
-        # Mock messages - one complete assistant message with stop signal
-        mock_messages = [
-            {
-                "info": {
-                    "id": "msg-1",
-                    "role": "assistant",
-                    "time": {"completed": 1234567890},
-                    "finish": "stop",
-                }
-            }
-        ]
-        mock_opencode.get_messages.return_value = mock_messages
-        mock_opencode.abort_session.return_value = True
-
-        # Collect yielded messages
-        messages = list(
+        turns = list(
             orchestrator.run(
                 repo_url="https://github.com/test/repo",
                 branch="main",
                 prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
                 max_turns=5,
             )
         )
 
-        assert len(messages) == 1
-        assert messages[0]["info"]["id"] == "msg-1"
-        mock_opencode.create_session.assert_called_once_with(Path("/tmp/test"))
-        mock_opencode.abort_session.assert_called_once_with("session-123")
+        assert len(turns) == 1
+        assert turns[0].turn_index == 0
+        assert orchestrator.completion_status == "completed"
+        mock_pi.run.assert_called_once()
 
     def test_run_sandbox_failure(self) -> None:
         """Test run when sandbox creation fails."""
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
-        # Mock sandbox returning None
         mock_sandbox.sandbox.return_value.__enter__ = MagicMock(return_value=None)
         mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -126,166 +106,56 @@ class TestSimulationOrchestratorRun:
                     repo_url="https://github.com/test/repo",
                     branch="main",
                     prompt="Test prompt",
-                    model_id="test-model",
-                    provider="local",
                 )
             )
 
-    def test_run_message_deduplication(self) -> None:
-        """Test that messages are deduplicated."""
-        mock_opencode = MagicMock()
-        mock_tracer = MagicMock()
-        mock_sandbox = MagicMock()
-
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
-
-        mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
-            return_value=Path("/tmp/test")
-        )
-        mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
-
-        mock_opencode.create_session.return_value = "session-123"
-
-        # Same message returned twice
-        mock_message = {
-            "info": {
-                "id": "msg-1",
-                "role": "assistant",
-                "time": {"completed": 1234567890},
-                "finish": "stop",
-            }
-        }
-        mock_opencode.get_messages.side_effect = [[mock_message], [mock_message]]
-        mock_opencode.abort_session.return_value = True
-
-        messages = list(
-            orchestrator.run(
-                repo_url="https://github.com/test/repo",
-                branch="main",
-                prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
-                max_turns=5,
-            )
-        )
-
-        # Should only yield the message once
-        assert len(messages) == 1
-
     def test_run_max_turns_reached(self) -> None:
-        """Test that run stops when max_turns is reached."""
-        mock_opencode = MagicMock()
+        """Test that completion_status is max_turns when pi hits limit."""
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
         mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
             return_value=Path("/tmp/test")
         )
         mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_opencode.create_session.return_value = "session-123"
-
-        # Create messages up to max_turns (with content so they count)
-        mock_messages = [
-            {
-                "info": {
-                    "id": f"msg-{i}",
-                    "role": "assistant",
-                    "time": {"completed": 1234567890},
-                },
-                "parts": [{"type": "text", "text": f"Response {i}"}],
-            }
-            for i in range(5)
+        mock_turns = [
+            TurnData(turn_index=i, content=[{"type": "text", "text": f"T{i}"}])
+            for i in range(3)
         ]
-        mock_opencode.get_messages.side_effect = [
-            mock_messages[: i + 1] for i in range(5)
-        ]
-        mock_opencode.abort_session.return_value = True
+        mock_pi.run.return_value = iter(mock_turns)
+        mock_pi.max_turns_reached = True
 
-        messages = list(
+        turns = list(
             orchestrator.run(
                 repo_url="https://github.com/test/repo",
                 branch="main",
                 prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
                 max_turns=3,
             )
         )
 
-        # Should stop at max_turns (3 assistant messages)
-        expected_message_count = 3
-        assert len(messages) == expected_message_count
-        mock_opencode.abort_session.assert_called_once()
+        expected_turn_count = 3
+        assert len(turns) == expected_turn_count
+        assert orchestrator.completion_status == "max_turns"
 
-    def test_run_incomplete_messages_filtered(self) -> None:
-        """Test that incomplete messages (no completed timestamp) are filtered."""
-        mock_opencode = MagicMock()
+    def test_run_exception(self) -> None:
+        """Test that exception sets completion_status to error."""
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
         mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
             return_value=Path("/tmp/test")
         )
         mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_opencode.create_session.return_value = "session-123"
-
-        # Mix of complete and incomplete messages
-        mock_messages = [
-            {
-                "info": {
-                    "id": "msg-1",
-                    "role": "assistant",
-                    "time": {"completed": 1234567890},
-                    "finish": "stop",
-                }
-            },
-            {
-                "info": {
-                    "id": "msg-2",
-                    "role": "assistant",
-                    "time": {},  # No completed timestamp
-                }
-            },
-        ]
-        mock_opencode.get_messages.return_value = mock_messages
-        mock_opencode.abort_session.return_value = True
-
-        messages = list(
-            orchestrator.run(
-                repo_url="https://github.com/test/repo",
-                branch="main",
-                prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
-            )
-        )
-
-        # Should only yield the complete message
-        assert len(messages) == 1
-        assert messages[0]["info"]["id"] == "msg-1"
-
-    def test_run_exception_abort_session(self) -> None:
-        """Test that session is aborted when exception occurs."""
-        mock_opencode = MagicMock()
-        mock_tracer = MagicMock()
-        mock_sandbox = MagicMock()
-
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
-
-        mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
-            return_value=Path("/tmp/test")
-        )
-        mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
-
-        mock_opencode.create_session.return_value = "session-123"
-        mock_opencode.get_messages.side_effect = Exception("Connection error")
-        mock_opencode.abort_session.return_value = True
+        mock_pi.run.side_effect = Exception("Connection error")
 
         with pytest.raises(Exception, match="Connection error"):
             list(
@@ -293,112 +163,66 @@ class TestSimulationOrchestratorRun:
                     repo_url="https://github.com/test/repo",
                     branch="main",
                     prompt="Test prompt",
-                    model_id="test-model",
-                    provider="local",
                 )
             )
 
-        mock_opencode.abort_session.assert_called_once_with("session-123")
+        assert orchestrator.completion_status == "error"
 
-    def test_run_stop_with_content_continues(self) -> None:
-        """Test that finish=stop with content does not abort the session."""
-        mock_opencode = MagicMock()
+    def test_run_git_diff_capture(self) -> None:
+        """Test that git diff is captured in finally block."""
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_sandbox = MagicMock()
 
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
+
+        mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
+            return_value=Path("/tmp/test")
+        )
+        mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
+        mock_sandbox.get_git_diff.return_value = "diff --git a/file.txt"
+
+        mock_pi.run.return_value = iter([])
+        mock_pi.max_turns_reached = False
+
+        list(
+            orchestrator.run(
+                repo_url="https://github.com/test/repo",
+                branch="main",
+                prompt="Test prompt",
+                capture_git_diff=True,
+            )
+        )
+
+        mock_tracer.log_git_diff.assert_called_once_with("diff --git a/file.txt")
+
+    def test_run_system_prompt_passed(self) -> None:
+        """Test that system_prompt is passed to pi client."""
+        mock_pi = MagicMock()
+        mock_tracer = MagicMock()
+        mock_sandbox = MagicMock()
+
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
 
         mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
             return_value=Path("/tmp/test")
         )
         mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
 
-        mock_opencode.create_session.return_value = "session-123"
+        mock_pi.run.return_value = iter([])
+        mock_pi.max_turns_reached = False
 
-        # Assistant message with finish=stop but has text content
-        content_message = {
-            "info": {
-                "id": "msg-1",
-                "role": "assistant",
-                "time": {"completed": 1234567890},
-                "finish": "stop",
-            },
-            "parts": [{"type": "text", "text": "I will now use a tool"}],
-        }
-        # Followed by an empty stop message (orchestrator loop)
-        empty_message = {
-            "info": {
-                "id": "msg-2",
-                "role": "assistant",
-                "time": {"completed": 1234567891},
-                "finish": "stop",
-            },
-        }
-        mock_opencode.get_messages.side_effect = [
-            [content_message],
-            [content_message, empty_message],
-        ]
-        mock_opencode.abort_session.return_value = True
-
-        messages = list(
+        list(
             orchestrator.run(
                 repo_url="https://github.com/test/repo",
                 branch="main",
                 prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
-                max_turns=5,
+                system_prompt="You are a test",
             )
         )
 
-        # Should yield both messages and abort on the empty one
-        expected_messages = 2
-        assert len(messages) == expected_messages
-        mock_opencode.abort_session.assert_called_once_with("session-123")
-
-    def test_run_no_stop_signal(self) -> None:
-        """Test run without stop signal continues until max_turns."""
-        mock_opencode = MagicMock()
-        mock_tracer = MagicMock()
-        mock_sandbox = MagicMock()
-
-        orchestrator = SimulationOrchestrator(mock_opencode, mock_tracer, mock_sandbox)
-
-        mock_sandbox.sandbox.return_value.__enter__ = MagicMock(
-            return_value=Path("/tmp/test")
-        )
-        mock_sandbox.sandbox.return_value.__exit__ = MagicMock(return_value=False)
-
-        mock_opencode.create_session.return_value = "session-123"
-
-        # Messages without stop signal (with content so they count toward max_turns)
-        mock_messages = [
-            {
-                "info": {
-                    "id": "msg-1",
-                    "role": "assistant",
-                    "time": {"completed": 1234567890},
-                },
-                "parts": [{"type": "text", "text": "Working on it"}],
-            }
-        ]
-        mock_opencode.get_messages.side_effect = [mock_messages, mock_messages]
-        mock_opencode.abort_session.return_value = True
-
-        # Use max_turns=1 to limit the test
-        messages = list(
-            orchestrator.run(
-                repo_url="https://github.com/test/repo",
-                branch="main",
-                prompt="Test prompt",
-                model_id="test-model",
-                provider="local",
-                max_turns=1,
-            )
-        )
-
-        assert len(messages) == 1
-        mock_opencode.abort_session.assert_called_once()
+        call_kwargs = mock_pi.run.call_args[1]
+        assert call_kwargs["system_prompt"] == "You are a test"
 
 
 class TestRunSimulation:
@@ -409,16 +233,14 @@ class TestRunSimulation:
     ) -> None:
         """Test successful simulation execution."""
         mock_sandbox = MagicMock()
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
 
-        # Mock tracer context manager
         mock_tracer.log_simulation.return_value.__enter__ = MagicMock(
             return_value=mock_tracer
         )
         mock_tracer.log_simulation.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Mock orchestrator
         with patch(
             "beyond_vibes.simulations.orchestration.SimulationOrchestrator"
         ) as mock_orchestrator_class:
@@ -430,22 +252,22 @@ class TestRunSimulation:
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
-                opencode_client=mock_opencode,
+                pi_client=mock_pi,
                 tracer=mock_tracer,
                 prompt="Test prompt",
             )
 
-        assert result is False  # No error occurred
+        assert result is False
         mock_tracer.log_simulation.assert_called_once_with(
             mock_simulation_config, mock_model_config
         )
 
-    def test_run_simulation_with_messages(
+    def test_run_simulation_with_turns(
         self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
     ) -> None:
-        """Test simulation that yields messages."""
+        """Test simulation that yields turns."""
         mock_sandbox = MagicMock()
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
 
         mock_tracer.log_simulation.return_value.__enter__ = MagicMock(
@@ -453,9 +275,9 @@ class TestRunSimulation:
         )
         mock_tracer.log_simulation.return_value.__exit__ = MagicMock(return_value=False)
 
-        test_messages = [
-            {"info": {"id": "msg-1"}},
-            {"info": {"id": "msg-2"}},
+        test_turns = [
+            TurnData(turn_index=0, content=[{"type": "text", "text": "A"}]),
+            TurnData(turn_index=1, content=[{"type": "text", "text": "B"}]),
         ]
 
         with patch(
@@ -463,28 +285,27 @@ class TestRunSimulation:
         ) as mock_orchestrator_class:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
-            mock_orchestrator.run.return_value = iter(test_messages)
+            mock_orchestrator.run.return_value = iter(test_turns)
 
             result = run_simulation(
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
-                opencode_client=mock_opencode,
+                pi_client=mock_pi,
                 tracer=mock_tracer,
                 prompt="Test prompt",
             )
 
         assert result is False
-        # Verify messages were logged
-        expected_logged_messages = 2
-        assert mock_tracer.log_message.call_count == expected_logged_messages
+        expected_logged_turns = 2
+        assert mock_tracer.log_turn.call_count == expected_logged_turns
 
     def test_run_simulation_error(
         self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
     ) -> None:
         """Test simulation that encounters an error."""
         mock_sandbox = MagicMock()
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_tracer.session = MagicMock()
 
@@ -504,12 +325,12 @@ class TestRunSimulation:
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
-                opencode_client=mock_opencode,
+                pi_client=mock_pi,
                 tracer=mock_tracer,
                 prompt="Test prompt",
             )
 
-        assert result is True  # Error occurred
+        assert result is True
         mock_tracer.log_error.assert_called_once_with("Simulation failed")
 
     def test_run_simulation_error_no_session(
@@ -517,7 +338,7 @@ class TestRunSimulation:
     ) -> None:
         """Test simulation error when tracer has no session."""
         mock_sandbox = MagicMock()
-        mock_opencode = MagicMock()
+        mock_pi = MagicMock()
         mock_tracer = MagicMock()
         mock_tracer.session = None
 
@@ -537,11 +358,10 @@ class TestRunSimulation:
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
-                opencode_client=mock_opencode,
+                pi_client=mock_pi,
                 tracer=mock_tracer,
                 prompt="Test prompt",
             )
 
         assert result is True
-        # log_error should not be called when session is None
         mock_tracer.log_error.assert_not_called()

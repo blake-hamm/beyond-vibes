@@ -578,7 +578,7 @@ def test_simulate_successful_execution(
                         mock_sandbox_class.return_value = mock_sandbox
 
                         with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
+                            "beyond_vibes.cli.PiDevClient"
                         ) as mock_opencode_class:
                             mock_opencode = MagicMock()
                             mock_opencode_class.return_value.__enter__ = MagicMock(
@@ -656,7 +656,7 @@ def test_simulate_error_occurred(
                         mock_sandbox_class.return_value = mock_sandbox
 
                         with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
+                            "beyond_vibes.cli.PiDevClient"
                         ) as mock_opencode_class:
                             mock_opencode = MagicMock()
                             mock_opencode_class.return_value.__enter__ = MagicMock(
@@ -739,7 +739,7 @@ def test_simulate_provider_filter(
                         mock_sandbox_class.return_value = mock_sandbox
 
                         with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
+                            "beyond_vibes.cli.PiDevClient"
                         ) as mock_opencode_class:
                             mock_opencode = MagicMock()
                             mock_opencode_class.return_value.__enter__ = MagicMock(
@@ -818,7 +818,7 @@ def test_simulate_custom_quant_tag(
                         mock_sandbox_class.return_value = mock_sandbox
 
                         with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
+                            "beyond_vibes.cli.PiDevClient"
                         ) as mock_opencode_class:
                             mock_opencode = MagicMock()
                             mock_opencode_class.return_value.__enter__ = MagicMock(

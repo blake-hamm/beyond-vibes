@@ -14,8 +14,8 @@ from beyond_vibes.model_config import (
 from beyond_vibes.model_downloader import HFClient, S3Client
 from beyond_vibes.settings import settings
 from beyond_vibes.simulations import SimulationLogger
-from beyond_vibes.simulations.opencode import OpenCodeClient
 from beyond_vibes.simulations.orchestration import run_simulation
+from beyond_vibes.simulations.pi_dev import PiDevClient
 from beyond_vibes.simulations.prompts.loader import build_prompt, load_task_config
 from beyond_vibes.simulations.sandbox import SandboxManager
 
@@ -140,11 +140,14 @@ def simulate(  # noqa: PLR0913
 
     sandbox = SandboxManager()
 
-    with OpenCodeClient() as opencode_client:
+    with PiDevClient(
+        provider=model_config.provider,
+        model=model_config.get_model_id(),
+    ) as pi_client:
         sim_logger = SimulationLogger(quant_tag=quant_tag)
 
         error_occurred = run_simulation(
-            sim_config, model_config, sandbox, opencode_client, sim_logger, prompt
+            sim_config, model_config, sandbox, pi_client, sim_logger, prompt
         )
 
     sandbox.cleanup()
