@@ -200,11 +200,11 @@ The download command automatically skips models without a `repo_id` (API models)
 
 ## CLI - Simulations
 
-Run simulations by cloning a repo and executing a prompt via OpenCode.
+Run simulations by cloning a repo and executing a prompt via pi.dev.
 
 ### Prerequisites
 
-- OpenCode server running (default: http://127.0.0.1:4096)
+- pi.dev installed (available via `nix develop`)
 - MLflow tracking server configured (optional, for logging)
 - Model defined in `models.yaml`
 
@@ -220,8 +220,8 @@ MLFLOW_TRACKING_URI=https://mlflow.example.com
 bucket: beyond-vibes
 models:
   - name: minimax-m2.5-free
-    repo_id: opencode/minimax-m2.5-free
-    quant_tags: []
+    provider: minimax
+    model_id: minimax-m2.5-free
 ```
 
 ### Run

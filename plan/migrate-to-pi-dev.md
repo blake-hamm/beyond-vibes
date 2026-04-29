@@ -364,5 +364,15 @@ So all tool calls were silently dropped.
 
 **Tests:** 194 tests pass. Ruff clean.
 
-### Phase 5
-_(Update after implementation)_
+### Phase 5 — COMPLETE
+
+**Implemented:**
+
+1. Archived `src/beyond_vibes/simulations/opencode.py` → `plan/archive/opencode.py`
+2. Archived `tests/test_opencode.py` → `plan/archive/test_opencode.py`
+3. Removed `opencode_url` from `Settings` (`src/beyond_vibes/settings.py`)
+4. Updated `tests/test_cli.py` — renamed `mock_opencode` → `mock_pi_dev` for clarity
+5. Updated `README.md` — replaced OpenCode server references with pi.dev, updated `models.yaml` example
+6. Verified zero `opencode` references remain in `src/` or `tests/`
+
+**Tests:** 175 tests pass (175 = 194 - 19 archived opencode tests). Ruff clean.

@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from beyond_vibes.simulations.opencode import OpenCodeClient
 
 

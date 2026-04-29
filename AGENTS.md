@@ -12,18 +12,20 @@ nix develop -c ruff check --fix . && nix develop -c ruff format .
 nix develop -c mypy src/        # Type check
 
 ## Project Layout
-src/evaluators/   # LLM judge logic (DSPy-based)
-src/models/       # Model configs and wrappers
-configs/          # Task and benchmark configs
+src/beyond_vibes/evaluations/   # LLM judge logic (DSPy-based)
+src/beyond_vibes/model_config.py # Model configs
+src/beyond_vibes/model_downloader/ # HF / S3 download helpers
+src/beyond_vibes/simulations/   # Simulation engine (pi.dev client, orchestration, MLflow tracing)
+src/beyond_vibes/simulations/prompts/tasks/ # Task prompt YAMLs
 data/             # Golden datasets (gitignored)
 tests/
 
 ## Key Concepts
 - **Archetypes**: Four task categories — Architectural Planning, Repo Maintenance, Feature Implementation, Comparative Research
 - **Golden dataset**: Human-validated input/output pairs in `data/golden/`
-- **LLM judge**: DSPy-optimized multi-metric scorer in `src/evaluators/`
+- **LLM judge**: DSPy-optimized multi-metric scorer in `src/beyond_vibes/evaluations/`
 - **Metrics**: Universal (applies to all) + Category-specific (per-archetype)
-- **Tasks**: Defined in `configs/tasks/`, run via OpenCode
+- **Tasks**: Defined in `src/beyond_vibes/simulations/prompts/tasks/`, run via pi.dev
 
 ## Git Rules
 - Feature branches: `feature/description`
