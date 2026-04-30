@@ -390,10 +390,10 @@ class TestComputeLatencyMetrics:
         )
         turn.usage = {"input": 100, "output": 50}
         compute_latency_metrics(turn)
-        assert turn.prompt_processing_ms == 1000.0  # noqa: PLR2004
-        assert turn.ttft_ms == 1000.0  # noqa: PLR2004
-        assert turn.generation_time_ms == 2000.0  # noqa: PLR2004
-        assert turn.e2e_turn_ms == 3000.0  # noqa: PLR2004
+        assert turn.prompt_processing_s == 1.0  # noqa: PLR2004
+        assert turn.ttft_s == 1.0  # noqa: PLR2004
+        assert turn.generation_time_s == 2.0  # noqa: PLR2004
+        assert turn.e2e_turn_s == 3.0  # noqa: PLR2004
         assert turn.prompt_tps == 100.0  # noqa: PLR2004
         assert turn.generation_tps == 25.0  # noqa: PLR2004
 
@@ -401,9 +401,9 @@ class TestComputeLatencyMetrics:
         """Test nothing computed when timestamps missing."""
         turn = TurnData(turn_index=0)
         compute_latency_metrics(turn)
-        assert turn.prompt_processing_ms is None
-        assert turn.ttft_ms is None
-        assert turn.generation_time_ms is None
+        assert turn.prompt_processing_s is None
+        assert turn.ttft_s is None
+        assert turn.generation_time_s is None
 
     def test_zero_tokens(self) -> None:
         """Test TPS is None when token counts are zero."""
@@ -427,8 +427,8 @@ class TestComputeLatencyMetrics:
         )
         turn.usage = {"input": 10, "output": 20}
         compute_latency_metrics(turn)
-        assert turn.prompt_processing_ms is None
-        assert turn.generation_time_ms == 1000.0  # noqa: PLR2004
+        assert turn.prompt_processing_s is None
+        assert turn.generation_time_s == 1.0  # noqa: PLR2004
         assert turn.generation_tps == 20.0  # noqa: PLR2004
         assert turn.prompt_tps is None
 
@@ -452,9 +452,9 @@ class TestPiDevClientLatency:
         assert turn.timestamps is not None
         assert turn.timestamps.user_message_end is not None
         assert turn.timestamps.assistant_message_end is not None
-        assert turn.prompt_processing_ms is not None
-        assert turn.generation_time_ms is not None
-        assert turn.ttft_ms is not None
+        assert turn.prompt_processing_s is not None
+        assert turn.generation_time_s is not None
+        assert turn.ttft_s is not None
 
     def test_run_captures_first_update(self, fixture_lines: list[str]) -> None:
         """Test that first message_update timestamp is captured."""
@@ -486,9 +486,9 @@ class TestTurnData:
         assert turn.tool_results == []
         assert turn.raw_message is None
         assert turn.timestamps is None
-        assert turn.prompt_processing_ms is None
-        assert turn.ttft_ms is None
-        assert turn.generation_time_ms is None
-        assert turn.e2e_turn_ms is None
+        assert turn.prompt_processing_s is None
+        assert turn.ttft_s is None
+        assert turn.generation_time_s is None
+        assert turn.e2e_turn_s is None
         assert turn.prompt_tps is None
         assert turn.generation_tps is None

@@ -24,12 +24,18 @@ class PiDevTimeoutError(PiDevError):
 
 @dataclass
 class TurnTimestamps:
-    """Raw wall-clock timestamps captured during JSONL streaming."""
+    """Raw wall-clock timestamps captured during JSONL streaming.
+
+    Perf-counter values (float seconds) are used for latency math.
+    Nanosecond values (int) are epoch timestamps for MLflow spans.
+    """
 
     user_message_end: float | None = None
     assistant_message_start: float | None = None
     assistant_message_end: float | None = None
     first_update: float | None = None
+    assistant_message_start_ns: int | None = None
+    assistant_message_end_ns: int | None = None
 
 
 @dataclass
@@ -49,10 +55,10 @@ class TurnData:
     timestamps: TurnTimestamps | None = None
 
     # Derived latency metrics (computed before yield)
-    prompt_processing_ms: float | None = None
-    ttft_ms: float | None = None
-    generation_time_ms: float | None = None
-    e2e_turn_ms: float | None = None
+    prompt_processing_s: float | None = None
+    ttft_s: float | None = None
+    generation_time_s: float | None = None
+    e2e_turn_s: float | None = None
     prompt_tps: float | None = None
     generation_tps: float | None = None
 
@@ -71,24 +77,20 @@ def compute_latency_metrics(turn: TurnData) -> None:
     output_tokens = usage.get("output", 0)
 
     if ts.assistant_message_start is not None and ts.user_message_end is not None:
-        turn.prompt_processing_ms = (
-            ts.assistant_message_start - ts.user_message_end
-        ) * 1000
-        turn.ttft_ms = turn.prompt_processing_ms
+        turn.prompt_processing_s = ts.assistant_message_start - ts.user_message_end
+        turn.ttft_s = turn.prompt_processing_s
 
     if ts.assistant_message_end is not None and ts.assistant_message_start is not None:
-        turn.generation_time_ms = (
-            ts.assistant_message_end - ts.assistant_message_start
-        ) * 1000
+        turn.generation_time_s = ts.assistant_message_end - ts.assistant_message_start
 
     if ts.assistant_message_end is not None and ts.user_message_end is not None:
-        turn.e2e_turn_ms = (ts.assistant_message_end - ts.user_message_end) * 1000
+        turn.e2e_turn_s = ts.assistant_message_end - ts.user_message_end
 
-    if turn.prompt_processing_ms is not None and input_tokens > 0:
-        turn.prompt_tps = input_tokens / (turn.prompt_processing_ms / 1000)
+    if turn.prompt_processing_s is not None and input_tokens > 0:
+        turn.prompt_tps = input_tokens / turn.prompt_processing_s
 
-    if turn.generation_time_ms is not None and output_tokens > 0:
-        turn.generation_tps = output_tokens / (turn.generation_time_ms / 1000)
+    if turn.generation_time_s is not None and output_tokens > 0:
+        turn.generation_tps = output_tokens / turn.generation_time_s
 
 
 class PiDevClient:
@@ -200,6 +202,7 @@ class PiDevClient:
 
         for raw_line in self._proc.stdout:
             t_recv = time.perf_counter()
+            t_recv_ns = time.time_ns()
             line = raw_line.strip()
             if not line:
                 continue
@@ -221,6 +224,7 @@ class PiDevClient:
                     current_turn.timestamps = TurnTimestamps(
                         user_message_end=pending_user_message_end,
                         assistant_message_start=t_recv,
+                        assistant_message_start_ns=t_recv_ns,
                     )
                     pending_user_message_end = None
 
@@ -279,6 +283,7 @@ class PiDevClient:
                     if current_turn.timestamps is None:
                         current_turn.timestamps = TurnTimestamps()
                     current_turn.timestamps.assistant_message_end = t_recv
+                    current_turn.timestamps.assistant_message_end_ns = t_recv_ns
                     compute_latency_metrics(current_turn)
 
                     pending_turn = current_turn
