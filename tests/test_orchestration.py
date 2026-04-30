@@ -41,7 +41,7 @@ def mock_model_config() -> ModelConfig:
 class TestSimulationOrchestratorInit:
     """Tests for SimulationOrchestrator initialization."""
 
-    def test_init(self) -> None:
+    def test_init(self: "TestSimulationOrchestratorInit") -> None:
         """Test orchestrator initialization."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -58,7 +58,7 @@ class TestSimulationOrchestratorInit:
 class TestSimulationOrchestratorRun:
     """Tests for SimulationOrchestrator.run method."""
 
-    def test_run_success(self) -> None:
+    def test_run_success(self: "TestSimulationOrchestratorRun") -> None:
         """Test successful simulation run yielding TurnData."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -89,7 +89,7 @@ class TestSimulationOrchestratorRun:
         assert orchestrator.completion_status == "completed"
         mock_pi.run.assert_called_once()
 
-    def test_run_sandbox_failure(self) -> None:
+    def test_run_sandbox_failure(self: "TestSimulationOrchestratorRun") -> None:
         """Test run when sandbox creation fails."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -109,7 +109,7 @@ class TestSimulationOrchestratorRun:
                 )
             )
 
-    def test_run_max_turns_reached(self) -> None:
+    def test_run_max_turns_reached(self: "TestSimulationOrchestratorRun") -> None:
         """Test that completion_status is max_turns when pi hits limit."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -142,7 +142,7 @@ class TestSimulationOrchestratorRun:
         assert len(turns) == expected_turn_count
         assert orchestrator.completion_status == "max_turns"
 
-    def test_run_exception(self) -> None:
+    def test_run_exception(self: "TestSimulationOrchestratorRun") -> None:
         """Test that exception sets completion_status to error."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -168,7 +168,7 @@ class TestSimulationOrchestratorRun:
 
         assert orchestrator.completion_status == "error"
 
-    def test_run_git_diff_capture(self) -> None:
+    def test_run_git_diff_capture(self: "TestSimulationOrchestratorRun") -> None:
         """Test that git diff is captured in finally block."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -196,7 +196,7 @@ class TestSimulationOrchestratorRun:
 
         mock_tracer.log_git_diff.assert_called_once_with("diff --git a/file.txt")
 
-    def test_run_system_prompt_passed(self) -> None:
+    def test_run_system_prompt_passed(self: "TestSimulationOrchestratorRun") -> None:
         """Test that system_prompt is passed to pi client."""
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -229,7 +229,9 @@ class TestRunSimulation:
     """Tests for run_simulation function."""
 
     def test_run_simulation_success(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestRunSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test successful simulation execution."""
         mock_sandbox = MagicMock()
@@ -247,8 +249,9 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter([])
+            mock_orchestrator.check_stderr_for_errors.return_value = None
 
-            result = run_simulation(
+            run_simulation(
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
@@ -257,13 +260,14 @@ class TestRunSimulation:
                 prompt="Test prompt",
             )
 
-        assert result is False
         mock_tracer.log_simulation.assert_called_once_with(
             mock_simulation_config, mock_model_config
         )
 
     def test_run_simulation_with_turns(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestRunSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test simulation that yields turns."""
         mock_sandbox = MagicMock()
@@ -286,8 +290,9 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter(test_turns)
+            mock_orchestrator.check_stderr_for_errors.return_value = None
 
-            result = run_simulation(
+            run_simulation(
                 sim_config=mock_simulation_config,
                 model_config=mock_model_config,
                 sandbox=mock_sandbox,
@@ -296,14 +301,15 @@ class TestRunSimulation:
                 prompt="Test prompt",
             )
 
-        assert result is False
         expected_logged_turns = 2
         assert mock_tracer.log_turn.call_count == expected_logged_turns
 
     def test_run_simulation_error(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestRunSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
-        """Test simulation that encounters an error."""
+        """Test simulation that encounters an error propagates the exception."""
         mock_sandbox = MagicMock()
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -321,22 +327,25 @@ class TestRunSimulation:
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.side_effect = Exception("Simulation failed")
 
-            result = run_simulation(
-                sim_config=mock_simulation_config,
-                model_config=mock_model_config,
-                sandbox=mock_sandbox,
-                pi_client=mock_pi,
-                tracer=mock_tracer,
-                prompt="Test prompt",
-            )
+            with pytest.raises(Exception, match="Simulation failed"):
+                run_simulation(
+                    sim_config=mock_simulation_config,
+                    model_config=mock_model_config,
+                    sandbox=mock_sandbox,
+                    pi_client=mock_pi,
+                    tracer=mock_tracer,
+                    prompt="Test prompt",
+                )
 
-        assert result is True
-        mock_tracer.log_error.assert_called_once_with("Simulation failed")
+        mock_tracer.log_error.assert_called_once()
+        assert "Simulation failed" in mock_tracer.log_error.call_args[0][0]
 
     def test_run_simulation_error_no_session(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestRunSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
-        """Test simulation error when tracer has no session."""
+        """Test simulation error when tracer has no session propagates exception."""
         mock_sandbox = MagicMock()
         mock_pi = MagicMock()
         mock_tracer = MagicMock()
@@ -354,14 +363,15 @@ class TestRunSimulation:
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.side_effect = Exception("Simulation failed")
 
-            result = run_simulation(
-                sim_config=mock_simulation_config,
-                model_config=mock_model_config,
-                sandbox=mock_sandbox,
-                pi_client=mock_pi,
-                tracer=mock_tracer,
-                prompt="Test prompt",
-            )
+            with pytest.raises(Exception, match="Simulation failed"):
+                run_simulation(
+                    sim_config=mock_simulation_config,
+                    model_config=mock_model_config,
+                    sandbox=mock_sandbox,
+                    pi_client=mock_pi,
+                    tracer=mock_tracer,
+                    prompt="Test prompt",
+                )
 
-        assert result is True
-        mock_tracer.log_error.assert_not_called()
+        mock_tracer.log_error.assert_called_once()
+        assert "Simulation failed" in mock_tracer.log_error.call_args[0][0]

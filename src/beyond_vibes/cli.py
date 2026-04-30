@@ -146,15 +146,18 @@ def simulate(  # noqa: PLR0913
     ) as pi_client:
         sim_logger = SimulationLogger(quant_tag=quant_tag)
 
-        error_occurred = run_simulation(
-            sim_config, model_config, sandbox, pi_client, sim_logger, prompt
-        )
+        try:
+            run_simulation(
+                sim_config, model_config, sandbox, pi_client, sim_logger, prompt
+            )
+        except Exception as e:
+            sandbox.cleanup()
+            logger.info("Sandbox cleaned up")
+            logger.error("Simulation failed: %s", e)
+            raise typer.Exit(code=1) from e
 
     sandbox.cleanup()
     logger.info("Sandbox cleaned up")
-
-    if error_occurred:
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -201,7 +204,8 @@ def evaluate(  # noqa: PLR0912,PLR0913
     Evaluates runs from MLflow using judges defined in task configuration.
     Results are logged back to the original runs.
 
-    Examples:
+    Examples
+    --------
         # Evaluate specific run
         beyond-vibes evaluate --run-id abc123
 

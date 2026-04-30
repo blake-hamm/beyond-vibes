@@ -42,14 +42,18 @@ def mock_model_config() -> ModelConfig:
 class TestGenerateSessionId:
     """Tests for generate_session_id function."""
 
-    def test_generate_with_quant_tag(self, mock_model_config: ModelConfig) -> None:
+    def test_generate_with_quant_tag(
+        self: "TestGenerateSessionId", mock_model_config: ModelConfig
+    ) -> None:
         """Test session ID generation with quant tag."""
         session_id = generate_session_id(mock_model_config, quant_tag="Q4_K_M")
 
         assert session_id.startswith("test-model_Q4_K_M_")
         assert len(session_id) > len("test-model_Q4_K_M_")
 
-    def test_generate_without_quant_tag(self, mock_model_config: ModelConfig) -> None:
+    def test_generate_without_quant_tag(
+        self: "TestGenerateSessionId", mock_model_config: ModelConfig
+    ) -> None:
         """Test session ID generation without quant tag defaults to fp16."""
         session_id = generate_session_id(mock_model_config)
 
@@ -61,7 +65,9 @@ class TestSimulationSession:
     """Tests for SimulationSession dataclass."""
 
     def test_session_defaults(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestSimulationSession",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test SimulationSession default values."""
         session = SimulationSession(
@@ -80,7 +86,7 @@ class TestSimulationSession:
         assert session.turns == []
         assert session.git_diff is None
         assert session.error is None
-        assert session.total_cost == 0.0
+        assert session.total_cost == 0.0  # noqa: PLR2004
         assert session.total_input_tokens == 0
         assert session.total_output_tokens == 0
         assert session.total_tokens == 0
@@ -90,7 +96,7 @@ class TestSimulationSession:
 class TestMlflowTracerInit:
     """Tests for MlflowTracer initialization."""
 
-    def test_init_defaults(self) -> None:
+    def test_init_defaults(self: "TestMlflowTracerInit") -> None:
         """Test initialization with default values."""
         tracer = MlflowTracer()
 
@@ -100,7 +106,7 @@ class TestMlflowTracerInit:
         assert tracer.quant_tag is None
         assert tracer.container_tag is None
 
-    def test_init_with_custom_values(self) -> None:
+    def test_init_with_custom_values(self: "TestMlflowTracerInit") -> None:
         """Test initialization with custom values."""
         tracer = MlflowTracer(
             experiment_name="custom-experiment",
@@ -117,7 +123,9 @@ class TestLogSimulation:
     """Tests for log_simulation context manager."""
 
     def test_log_simulation_success(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestLogSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test successful simulation logging."""
         tracer = MlflowTracer()
@@ -144,7 +152,9 @@ class TestLogSimulation:
             mock_mlflow.set_tag.assert_any_call("task.archetype", "test")
 
     def test_log_simulation_with_optional_params(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestLogSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test logging with optional parameters."""
         tracer = MlflowTracer(quant_tag="Q4_K_M", container_tag="v1.0")
@@ -166,7 +176,9 @@ class TestLogSimulation:
             mock_mlflow.log_param.assert_any_call("model.repo_id", "test/repo")
 
     def test_log_simulation_exception(
-        self, mock_simulation_config: SimulationConfig, mock_model_config: ModelConfig
+        self: "TestLogSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
     ) -> None:
         """Test exception handling in log_simulation."""
         tracer = MlflowTracer()
@@ -183,7 +195,7 @@ class TestLogTurn:
     """Tests for log_turn method."""
 
     @pytest.fixture
-    def mock_turn(self) -> TurnData:
+    def mock_turn(self: "TestLogTurn") -> TurnData:
         """Create a mock TurnData with text content."""
         return TurnData(
             turn_index=0,
@@ -198,7 +210,7 @@ class TestLogTurn:
             raw_message={"role": "assistant", "responseId": "msg_abc"},
         )
 
-    def test_log_turn_no_session(self) -> None:
+    def test_log_turn_no_session(self: "TestLogTurn") -> None:
         """Test logging turn without active session."""
         tracer = MlflowTracer()
 
@@ -206,8 +218,10 @@ class TestLogTurn:
             tracer.log_turn(TurnData(turn_index=0))
             mock_logger.warning.assert_called_once()
 
-    def test_log_turn_with_text_content(self, mock_turn: TurnData) -> None:
-        """Test logging turn with text content."""
+    def test_log_turn_with_text_content(
+        self: "TestLogTurn", mock_turn: TurnData
+    ) -> None:
+        """Test logging turn with text content keeps span open."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
         tracer.session.session_id = "session-123"
@@ -226,9 +240,10 @@ class TestLogTurn:
             content = mock_span.set_outputs.call_args[0][0]["content"][0]
             assert content["type"] == "text"
             assert content["content"] == "Hello world"
-            mock_span.end.assert_called_once()
+            assert tracer._active_span is mock_span
+            mock_span.end.assert_not_called()
 
-    def test_log_turn_with_thinking_content(self) -> None:
+    def test_log_turn_with_thinking_content(self: "TestLogTurn") -> None:
         """Test logging turn with thinking content."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -255,7 +270,7 @@ class TestLogTurn:
             assert content["type"] == "thinking"
             assert content["content"] == "Hmm..."
 
-    def test_log_turn_with_usage(self) -> None:
+    def test_log_turn_with_usage(self: "TestLogTurn") -> None:
         """Test logging turn captures usage attributes."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -298,7 +313,7 @@ class TestLogTurn:
             assert all_attrs["stop_reason"] == "toolUse"
             assert all_attrs["response_id"] == "msg_xyz"
 
-    def test_log_turn_with_tool_calls(self) -> None:
+    def test_log_turn_with_tool_calls(self: "TestLogTurn") -> None:
         """Test logging turn creates child spans for tools."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -344,7 +359,7 @@ class TestLogTurn:
                 {"output": {"stdout": "file.txt"}}
             )
 
-    def test_log_turn_with_tool_error(self) -> None:
+    def test_log_turn_with_tool_error(self: "TestLogTurn") -> None:
         """Test logging turn marks tool span as ERROR."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -388,7 +403,7 @@ class TestLogTurn:
             mock_child.add_event.assert_called_once()
             assert tracer.session.tool_error_count == 1
 
-    def test_log_turn_accumulates_session_totals(self) -> None:
+    def test_log_turn_accumulates_session_totals(self: "TestLogTurn") -> None:
         """Test that log_turn accumulates cost and token totals."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -425,7 +440,7 @@ class TestLogTurn:
         assert tracer.session.total_output_tokens == 5  # noqa: PLR2004
         assert tracer.session.total_tokens == 15  # noqa: PLR2004
 
-    def test_log_turn_accumulates_cache_tokens(self) -> None:
+    def test_log_turn_accumulates_cache_tokens(self: "TestLogTurn") -> None:
         """Test that log_turn accumulates cache read/write tokens."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -463,7 +478,7 @@ class TestLogTurn:
         assert tracer.session.total_cache_write_tokens == 50  # noqa: PLR2004
         assert tracer.session.total_tokens == 165  # noqa: PLR2004
 
-    def test_log_turn_computes_total_tokens_when_missing(self) -> None:
+    def test_log_turn_computes_total_tokens_when_missing(self: "TestLogTurn") -> None:
         """Test total_tokens fallback when provider omits totalTokens field."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -498,7 +513,7 @@ class TestLogTurn:
         # 10 + 5 + 100 + 50 = 165
         assert tracer.session.total_tokens == 165  # noqa: PLR2004
 
-    def test_session_token_math_adds_up(self) -> None:
+    def test_session_token_math_adds_up(self: "TestLogTurn") -> None:
         """Test that session total_tokens equals sum of all token components."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -559,7 +574,7 @@ class TestLogTurn:
         )
         assert tracer.session.total_tokens == expected_total
 
-    def test_log_turn_appends_turn(self) -> None:
+    def test_log_turn_appends_turn(self: "TestLogTurn") -> None:
         """Test that log_turn appends TurnData to session."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -585,7 +600,9 @@ class TestLogTurn:
         assert tracer.session.turns[0].turn_index == 3  # noqa: PLR2004
         assert tracer.session.turns[0].raw_message == {"role": "assistant"}
 
-    def test_log_turn_sets_perf_attributes(self, mock_turn: TurnData) -> None:
+    def test_log_turn_sets_perf_attributes(
+        self: "TestLogTurn", mock_turn: TurnData
+    ) -> None:
         """Test that log_turn sets performance span attributes."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -621,7 +638,7 @@ class TestLogTurn:
         assert perf_call["perf.prompt_tps"] == 200.0  # noqa: PLR2004
         assert perf_call["perf.has_tool_calls"] is False
 
-    def test_log_turn_with_tool_calls_sets_has_tool_calls(self) -> None:
+    def test_log_turn_with_tool_calls_sets_has_tool_calls(self: "TestLogTurn") -> None:
         """Test perf metric reflects tool calls."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -656,7 +673,9 @@ class TestLogTurn:
         assert perf_call is not None
         assert perf_call["perf.has_tool_calls"] is True
 
-    def test_log_turn_without_latency_metrics(self, mock_turn: TurnData) -> None:
+    def test_log_turn_without_latency_metrics(
+        self: "TestLogTurn", mock_turn: TurnData
+    ) -> None:
         """Test log_turn handles TurnData without latency metrics."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -684,7 +703,7 @@ class TestLogTurn:
 class TestAccumulateToolCall:
     """Tests for _accumulate_tool_call method."""
 
-    def test_accumulate_new_tool(self) -> None:
+    def test_accumulate_new_tool(self: "TestAccumulateToolCall") -> None:
         """Test accumulating call for new tool."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -702,7 +721,7 @@ class TestAccumulateToolCall:
 
         assert tracer.session.tool_call_counts["bash"] == 1
 
-    def test_accumulate_existing_tool(self) -> None:
+    def test_accumulate_existing_tool(self: "TestAccumulateToolCall") -> None:
         """Test accumulating call for existing tool."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -716,7 +735,7 @@ class TestAccumulateToolCall:
         expected_count = 3
         assert tracer.session.tool_call_counts["bash"] == expected_count
 
-    def test_accumulate_no_session(self) -> None:
+    def test_accumulate_no_session(self: "TestAccumulateToolCall") -> None:
         """Test accumulating when no session exists."""
         tracer = MlflowTracer()
         tracer.session = None
@@ -727,7 +746,7 @@ class TestAccumulateToolCall:
 class TestLogGitDiff:
     """Tests for log_git_diff method."""
 
-    def test_log_git_diff_success(self) -> None:
+    def test_log_git_diff_success(self: "TestLogGitDiff") -> None:
         """Test logging git diff."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -736,7 +755,7 @@ class TestLogGitDiff:
 
         assert tracer.session.git_diff == "diff content"
 
-    def test_log_git_diff_no_session(self) -> None:
+    def test_log_git_diff_no_session(self: "TestLogGitDiff") -> None:
         """Test logging git diff without session."""
         tracer = MlflowTracer()
         tracer.session = None
@@ -749,7 +768,7 @@ class TestLogGitDiff:
 class TestLogSystemPrompt:
     """Tests for log_system_prompt method."""
 
-    def test_log_system_prompt_success(self) -> None:
+    def test_log_system_prompt_success(self: "TestLogSystemPrompt") -> None:
         """Test logging system prompt."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -758,7 +777,7 @@ class TestLogSystemPrompt:
 
         assert tracer.session.system_prompt == "System prompt content"
 
-    def test_log_system_prompt_no_session(self) -> None:
+    def test_log_system_prompt_no_session(self: "TestLogSystemPrompt") -> None:
         """Test logging system prompt without session."""
         tracer = MlflowTracer()
         tracer.session = None
@@ -771,7 +790,7 @@ class TestLogSystemPrompt:
 class TestLogError:
     """Tests for log_error method."""
 
-    def test_log_error_success(self) -> None:
+    def test_log_error_success(self: "TestLogError") -> None:
         """Test logging error."""
         tracer = MlflowTracer()
         tracer.session = MagicMock()
@@ -780,7 +799,7 @@ class TestLogError:
 
         assert tracer.session.error == "Something went wrong"
 
-    def test_log_error_no_session(self) -> None:
+    def test_log_error_no_session(self: "TestLogError") -> None:
         """Test logging error without session."""
         tracer = MlflowTracer()
         tracer.session = None
@@ -789,11 +808,111 @@ class TestLogError:
             tracer.log_error("Something went wrong")
             mock_logger.warning.assert_called_once()
 
+    def test_log_error_marks_active_span(self: "TestLogError") -> None:
+        """Test log_error marks the active span as ERROR with an exception event."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        mock_span = MagicMock()
+        tracer._active_span = mock_span
+
+        tracer.log_error("Model not found")
+
+        mock_span.set_status.assert_called_once_with("ERROR")
+        mock_span.add_event.assert_called_once()
+        event = mock_span.add_event.call_args[0][0]
+        assert event.name == "exception"
+        assert event.attributes["error.message"] == "Model not found"
+        assert event.attributes["error.type"] == "simulation_error"
+
+    def test_log_error_no_active_span(self: "TestLogError") -> None:
+        """Test log_error works even when no active span exists."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer._active_span = None
+
+        tracer.log_error("Model not found")
+
+        assert tracer.session.error == "Model not found"
+
+
+class TestActiveSpan:
+    """Tests for turn span lifecycle."""
+
+    def test_log_turn_keeps_span_open(self: "TestActiveSpan") -> None:
+        """Test log_turn stores the span as active without ending it."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.turns = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        turn = TurnData(turn_index=0, content=[{"type": "text", "text": "A"}])
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+
+            tracer.log_turn(turn)
+
+            assert tracer._active_span is mock_span
+            mock_span.end.assert_not_called()
+
+    def test_log_turn_ends_previous_span(self: "TestActiveSpan") -> None:
+        """Test logging a second turn ends the previous active span."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.turns = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.run_id = "run-123"
+
+        turn1 = TurnData(turn_index=0, content=[{"type": "text", "text": "A"}])
+        turn2 = TurnData(turn_index=1, content=[{"type": "text", "text": "B"}])
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span1 = MagicMock()
+            mock_span2 = MagicMock()
+            mock_mlflow.start_span_no_context.side_effect = [mock_span1, mock_span2]
+
+            tracer.log_turn(turn1)
+            tracer.log_turn(turn2)
+
+            mock_span1.end.assert_called_once()
+            assert tracer._active_span is mock_span2
+            mock_span2.end.assert_not_called()
+
+    def test_flush_ends_active_span(self: "TestActiveSpan") -> None:
+        """Test _flush ends the active turn span."""
+        tracer = MlflowTracer()
+        tracer.run_id = "run-123"
+        tracer.session = MagicMock()
+        tracer.session.turns = []
+        tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.tool_max_consecutive_calls = 0
+        tracer.session.error_message_indices = []
+        tracer.session.started_at = datetime.now()
+        tracer.session.error = None
+        tracer.session.git_diff = None
+        tracer.session.system_prompt = None
+        mock_span = MagicMock()
+        tracer._active_span = mock_span
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow"):
+            tracer._flush()
+
+        mock_span.end.assert_called_once()
+        assert tracer._active_span is None
+
 
 class TestFlush:
     """Tests for _flush method."""
 
-    def test_flush_no_run_id(self) -> None:
+    def test_flush_no_run_id(self: "TestFlush") -> None:
         """Test flush when no run_id exists."""
         tracer = MlflowTracer()
         tracer.run_id = None
@@ -803,7 +922,7 @@ class TestFlush:
             tracer._flush()
             mock_mlflow.log_metric.assert_not_called()
 
-    def test_flush_no_session(self) -> None:
+    def test_flush_no_session(self: "TestFlush") -> None:
         """Test flush when no session exists."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -813,7 +932,7 @@ class TestFlush:
             tracer._flush()
             mock_mlflow.log_metric.assert_not_called()
 
-    def test_flush_success(self) -> None:
+    def test_flush_success(self: "TestFlush") -> None:
         """Test successful flush."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -845,7 +964,7 @@ class TestFlush:
             mock_mlflow.log_metric.assert_any_call("tool_calls.read", 2)
             mock_mlflow.log_metric.assert_any_call("tool_total_calls", 5)
 
-    def test_flush_with_error(self) -> None:
+    def test_flush_with_error(self: "TestFlush") -> None:
         """Test flush when session has error."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -866,7 +985,7 @@ class TestFlush:
 
             mock_mlflow.log_metric.assert_any_call("has_error", 1)
 
-    def test_flush_with_git_diff(self) -> None:
+    def test_flush_with_git_diff(self: "TestFlush") -> None:
         """Test flush when session has git diff."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -889,7 +1008,7 @@ class TestFlush:
                 "diff content", "git_diff.patch"
             )
 
-    def test_flush_with_system_prompt(self) -> None:
+    def test_flush_with_system_prompt(self: "TestFlush") -> None:
         """Test flush when session has system prompt."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -912,7 +1031,7 @@ class TestFlush:
                 "System prompt content", "system_prompt.txt"
             )
 
-    def test_flush_with_git_diff_and_system_prompt(self) -> None:
+    def test_flush_with_git_diff_and_system_prompt(self: "TestFlush") -> None:
         """Test flush when session has both git diff and system prompt."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -937,7 +1056,7 @@ class TestFlush:
             )
             assert mock_mlflow.log_text.call_count == 2  # noqa: PLR2004
 
-    def test_flush_computes_total_time_from_turns(self) -> None:
+    def test_flush_computes_total_time_from_turns(self: "TestFlush") -> None:
         """Test flush computes total_time_seconds from turn latency."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
@@ -988,7 +1107,7 @@ class TestFlush:
             "total_time_seconds", pytest.approx(0.45)
         )
 
-    def test_flush_without_latency_metrics(self) -> None:
+    def test_flush_without_latency_metrics(self: "TestFlush") -> None:
         """Test flush does not log perf metrics when none exist."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"

@@ -1,6 +1,7 @@
 """Simulation orchestration - stream turns from pi.dev CLI."""
 
 import logging
+import traceback
 from typing import Generator
 
 from beyond_vibes.model_config import ModelConfig
@@ -11,12 +12,25 @@ from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
 
+# Keywords that indicate a failure even when pi exits 0
+_STDERR_ERROR_KEYWORDS = (
+    "error",
+    "404",
+    "not found",
+    "failed",
+    "unauthorized",
+    "forbidden",
+    "timeout",
+    "connection refused",
+    "bad request",
+)
+
 
 class SimulationOrchestrator:
     """Streams turns from pi.dev CLI during simulation runs."""
 
     def __init__(
-        self,
+        self: "SimulationOrchestrator",
         pi_client: PiDevClient,
         tracer: MlflowTracer,
         sandbox_manager: SandboxManager,
@@ -28,12 +42,12 @@ class SimulationOrchestrator:
         self._completion_status: str | None = None
 
     @property
-    def completion_status(self) -> str | None:
+    def completion_status(self: "SimulationOrchestrator") -> str | None:
         """Return the completion status of the simulation."""
         return self._completion_status
 
     def run(  # noqa: PLR0913
-        self,
+        self: "SimulationOrchestrator",
         repo_url: str,
         branch: str,
         prompt: str,
@@ -77,6 +91,17 @@ class SimulationOrchestrator:
                     else:
                         logger.debug("No git diff to capture (no changes)")
 
+    def check_stderr_for_errors(self: "SimulationOrchestrator") -> str | None:
+        """Return stderr content if it contains error indicators."""
+        stderr = getattr(self.pi, "_last_stderr", None)
+        if not isinstance(stderr, str) or not stderr:
+            return None
+        lower = stderr.lower()
+        for kw in _STDERR_ERROR_KEYWORDS:
+            if kw in lower:
+                return stderr
+        return None
+
 
 def run_simulation(  # noqa: PLR0913
     sim_config: SimulationConfig,
@@ -85,14 +110,13 @@ def run_simulation(  # noqa: PLR0913
     pi_client: PiDevClient,
     tracer: MlflowTracer,
     prompt: str,
-) -> bool:
-    """Execute the simulation and return True if error occurred."""
-    error_occurred = False
-    try:
-        with tracer.log_simulation(sim_config, model_config) as logger_ctx:
-            logger_ctx.log_system_prompt(prompt)
-            orchestrator = SimulationOrchestrator(pi_client, tracer, sandbox)
+) -> None:
+    """Execute the simulation. Raises on failure so MLflow marks the run FAILED."""
+    with tracer.log_simulation(sim_config, model_config) as logger_ctx:
+        logger_ctx.log_system_prompt(prompt)
+        orchestrator = SimulationOrchestrator(pi_client, tracer, sandbox)
 
+        try:
             for turn in orchestrator.run(
                 repo_url=sim_config.repository.url,
                 branch=sim_config.repository.branch,
@@ -106,12 +130,23 @@ def run_simulation(  # noqa: PLR0913
             if orchestrator.completion_status:
                 tracer.set_completion_status(orchestrator.completion_status)
 
-            logger.info("Simulation completed")
+        except Exception:
+            # Log error + stderr BEFORE re-raising so MLflow flushes them
+            exc_str = traceback.format_exc()
+            logger.error("Simulation failed:\n%s", exc_str)
+            tracer.log_error(exc_str)
+            stderr = getattr(pi_client, "_last_stderr", None)
+            if stderr:
+                tracer.log_stderr(stderr)
+            raise
 
-    except Exception as e:
-        logger.error("Simulation failed: %s", e)
-        error_occurred = True
-        if tracer.session:
-            tracer.log_error(str(e))
+        # Detect failures even when pi exits 0 (e.g. fake model)
+        stderr_errors = orchestrator.check_stderr_for_errors()
+        if stderr_errors:
+            msg = f"pi stderr indicates failure:\n{stderr_errors}"
+            logger.error(msg)
+            tracer.log_error(msg)
+            tracer.log_stderr(stderr_errors)
+            raise RuntimeError(msg)
 
-    return error_occurred
+        logger.info("Simulation completed")

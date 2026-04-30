@@ -26,16 +26,16 @@ def fixture_lines() -> list[str]:
 class TestPiDevClientInit:
     """Tests for PiDevClient initialization."""
 
-    def test_init_defaults(self) -> None:
+    def test_init_defaults(self: "TestPiDevClientInit") -> None:
         """Test initialization with default values."""
         client = PiDevClient()
         assert client.provider == "kimi-coding"
         assert client.model == "kimi-for-coding"
         expected_timeout = 300.0
         assert client.timeout == expected_timeout
-        assert client.stderr_log == Path("pi_dev_stderr.log")
+        assert client.stderr_log.name.endswith("_pi_stderr.log")
 
-    def test_init_custom(self) -> None:
+    def test_init_custom(self: "TestPiDevClientInit") -> None:
         """Test initialization with custom values."""
         client = PiDevClient(
             provider="openai",
@@ -53,7 +53,7 @@ class TestPiDevClientInit:
 class TestPiDevClientContextManager:
     """Tests for context manager."""
 
-    def test_context_manager(self) -> None:
+    def test_context_manager(self: "TestPiDevClientContextManager") -> None:
         """Test context manager calls abort on exit."""
         client = PiDevClient()
         client.abort = MagicMock()
@@ -61,7 +61,9 @@ class TestPiDevClientContextManager:
             assert ctx is client
         client.abort.assert_called_once()
 
-    def test_context_manager_with_exception(self) -> None:
+    def test_context_manager_with_exception(
+        self: "TestPiDevClientContextManager",
+    ) -> None:
         """Test context manager aborts even on exception."""
         client = PiDevClient()
         client.abort = MagicMock()
@@ -74,13 +76,14 @@ class TestPiDevClientContextManager:
 class TestPiDevClientRun:
     """Tests for run method."""
 
-    def test_run_success(self, fixture_lines: list[str]) -> None:
+    def test_run_success(self: "TestPiDevClientRun", fixture_lines: list[str]) -> None:
         """Test successful run yielding TurnData."""
         client = PiDevClient()
 
         mock_proc = MagicMock()
         mock_proc.stdout = iter(fixture_lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -101,7 +104,7 @@ class TestPiDevClientRun:
         assert turn.content[1]["type"] == "text"
         assert turn.content[1]["text"] == "Hello"
 
-    def test_run_command_construction(self) -> None:
+    def test_run_command_construction(self: "TestPiDevClientRun") -> None:
         """Test that pi command is constructed correctly."""
         client = PiDevClient(provider="test-provider", model="test-model")
 
@@ -122,6 +125,7 @@ class TestPiDevClientRun:
             ]
         )
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             with patch("os.getpgid", return_value=1234):
@@ -143,7 +147,7 @@ class TestPiDevClientRun:
         assert "Test prompt" in cmd
         assert call_args[1]["cwd"] is None
 
-    def test_run_working_dir(self) -> None:
+    def test_run_working_dir(self: "TestPiDevClientRun") -> None:
         """Test that working directory is passed to subprocess."""
         client = PiDevClient()
         mock_proc = MagicMock()
@@ -163,6 +167,7 @@ class TestPiDevClientRun:
             ]
         )
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             with patch("os.getpgid", return_value=1234):
@@ -171,19 +176,22 @@ class TestPiDevClientRun:
         call_args = mock_popen.call_args
         assert call_args[1]["cwd"] == Path("/tmp/test")
 
-    def test_run_premature_eof(self) -> None:
+    def test_run_premature_eof(self: "TestPiDevClientRun") -> None:
         """Test premature EOF raises PiDevError."""
         client = PiDevClient()
         mock_proc = MagicMock()
         mock_proc.stdout = iter([])
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
                 with pytest.raises(PiDevError, match="Premature EOF"):
                     list(client.run("Test prompt"))
 
-    def test_run_max_turns(self, fixture_lines: list[str]) -> None:
+    def test_run_max_turns(
+        self: "TestPiDevClientRun", fixture_lines: list[str]
+    ) -> None:
         """Test max_turns stops after N assistant turns."""
         client = PiDevClient()
         # Duplicate fixture to simulate 2 turns
@@ -192,6 +200,7 @@ class TestPiDevClientRun:
         mock_proc = MagicMock()
         mock_proc.stdout = iter(doubled)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -201,7 +210,7 @@ class TestPiDevClientRun:
         assert len(turns) == 1
         mock_kill.assert_called_once()
 
-    def test_run_invalid_json_skipped(self) -> None:
+    def test_run_invalid_json_skipped(self: "TestPiDevClientRun") -> None:
         """Test that invalid JSON lines are skipped with a warning."""
         client = PiDevClient()
         lines = [
@@ -222,6 +231,7 @@ class TestPiDevClientRun:
         mock_proc = MagicMock()
         mock_proc.stdout = iter(lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -235,16 +245,17 @@ class TestPiDevClientRun:
 class TestPiDevClientAbort:
     """Tests for abort method."""
 
-    def test_abort_no_process(self) -> None:
+    def test_abort_no_process(self: "TestPiDevClientAbort") -> None:
         """Test abort when no process is running."""
         client = PiDevClient()
         client.abort()  # Should not raise
 
-    def test_abort_kills_process(self) -> None:
+    def test_abort_kills_process(self: "TestPiDevClientAbort") -> None:
         """Test abort kills the process group."""
         client = PiDevClient()
         mock_proc = MagicMock()
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
         client._proc = mock_proc
 
         with patch("os.getpgid", return_value=1234):
@@ -257,12 +268,13 @@ class TestPiDevClientAbort:
 class TestPiDevClientTimeout:
     """Tests for timeout behavior."""
 
-    def test_timeout_triggers_kill(self) -> None:
+    def test_timeout_triggers_kill(self: "TestPiDevClientTimeout") -> None:
         """Test that timeout triggers process kill."""
         client = PiDevClient(timeout=0.01)
         mock_proc = MagicMock()
         mock_proc.stdout = iter([])
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -284,13 +296,16 @@ def tool_fixture_lines() -> list[str]:
 class TestPiDevClientToolRun:
     """Tests for run method with tool calls."""
 
-    def test_run_with_tool_calls(self, tool_fixture_lines: list[str]) -> None:
+    def test_run_with_tool_calls(
+        self: "TestPiDevClientToolRun", tool_fixture_lines: list[str]
+    ) -> None:
         """Test that tool calls and results are captured in TurnData."""
         client = PiDevClient()
 
         mock_proc = MagicMock()
         mock_proc.stdout = iter(tool_fixture_lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -317,7 +332,7 @@ class TestPiDevClientToolRun:
         assert len(turn1.tool_calls) == 0
         assert len(turn1.tool_results) == 0
 
-    def test_tool_call_without_message_start(self) -> None:
+    def test_tool_call_without_message_start(self: "TestPiDevClientToolRun") -> None:
         """Test tool events are captured even without preceding message_start."""
         client = PiDevClient()
         lines = [
@@ -354,6 +369,7 @@ class TestPiDevClientToolRun:
         mock_proc = MagicMock()
         mock_proc.stdout = iter(lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -368,7 +384,7 @@ class TestPiDevClientToolRun:
 class TestTurnTimestamps:
     """Tests for TurnTimestamps dataclass."""
 
-    def test_defaults(self) -> None:
+    def test_defaults(self: "TestTurnTimestamps") -> None:
         """Test TurnTimestamps default values."""
         ts = TurnTimestamps()
         assert ts.user_message_end is None
@@ -380,7 +396,7 @@ class TestTurnTimestamps:
 class TestComputeLatencyMetrics:
     """Tests for compute_latency_metrics helper."""
 
-    def test_full_metrics(self) -> None:
+    def test_full_metrics(self: "TestComputeLatencyMetrics") -> None:
         """Test all metrics computed correctly."""
         turn = TurnData(turn_index=0)
         turn.timestamps = TurnTimestamps(
@@ -397,7 +413,7 @@ class TestComputeLatencyMetrics:
         assert turn.prompt_tps == 100.0  # noqa: PLR2004
         assert turn.generation_tps == 25.0  # noqa: PLR2004
 
-    def test_no_timestamps(self) -> None:
+    def test_no_timestamps(self: "TestComputeLatencyMetrics") -> None:
         """Test nothing computed when timestamps missing."""
         turn = TurnData(turn_index=0)
         compute_latency_metrics(turn)
@@ -405,7 +421,7 @@ class TestComputeLatencyMetrics:
         assert turn.ttft_s is None
         assert turn.generation_time_s is None
 
-    def test_zero_tokens(self) -> None:
+    def test_zero_tokens(self: "TestComputeLatencyMetrics") -> None:
         """Test TPS is None when token counts are zero."""
         turn = TurnData(turn_index=0)
         turn.timestamps = TurnTimestamps(
@@ -418,7 +434,7 @@ class TestComputeLatencyMetrics:
         assert turn.prompt_tps is None
         assert turn.generation_tps is None
 
-    def test_partial_timestamps(self) -> None:
+    def test_partial_timestamps(self: "TestComputeLatencyMetrics") -> None:
         """Test partial timestamps compute available metrics only."""
         turn = TurnData(turn_index=0)
         turn.timestamps = TurnTimestamps(
@@ -436,12 +452,15 @@ class TestComputeLatencyMetrics:
 class TestPiDevClientLatency:
     """Tests for latency capture in _read_turns."""
 
-    def test_run_captures_timestamps(self, fixture_lines: list[str]) -> None:
+    def test_run_captures_timestamps(
+        self: "TestPiDevClientLatency", fixture_lines: list[str]
+    ) -> None:
         """Test that run captures wall-clock timestamps."""
         client = PiDevClient()
         mock_proc = MagicMock()
         mock_proc.stdout = iter(fixture_lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -456,12 +475,15 @@ class TestPiDevClientLatency:
         assert turn.generation_time_s is not None
         assert turn.ttft_s is not None
 
-    def test_run_captures_first_update(self, fixture_lines: list[str]) -> None:
+    def test_run_captures_first_update(
+        self: "TestPiDevClientLatency", fixture_lines: list[str]
+    ) -> None:
         """Test that first message_update timestamp is captured."""
         client = PiDevClient()
         mock_proc = MagicMock()
         mock_proc.stdout = iter(fixture_lines)
         mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
@@ -475,7 +497,7 @@ class TestPiDevClientLatency:
 class TestTurnData:
     """Tests for TurnData dataclass."""
 
-    def test_defaults(self) -> None:
+    def test_defaults(self: "TestTurnData") -> None:
         """Test TurnData default values."""
         turn = TurnData(turn_index=0)
         assert turn.turn_index == 0

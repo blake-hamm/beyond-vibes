@@ -670,7 +670,7 @@ def test_simulate_error_occurred(
 
                                 with patch(
                                     "beyond_vibes.cli.run_simulation",
-                                    return_value=True,
+                                    side_effect=RuntimeError("Simulation failed"),
                                 ):
                                     result = runner.invoke(
                                         app,
@@ -688,6 +688,7 @@ def test_simulate_error_occurred(
     assert result.exit_code == 1
     assert "Running simulation with model: test-model" in caplog.text
     assert "Sandbox cleaned up" in caplog.text
+    assert "Simulation failed" in caplog.text
     mock_sandbox.cleanup.assert_called_once()
 
 

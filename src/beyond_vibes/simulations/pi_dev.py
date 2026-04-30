@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -97,7 +98,7 @@ class PiDevClient:
     """Wrapper around pi.dev CLI for simulation runs."""
 
     def __init__(
-        self,
+        self: "PiDevClient",
         provider: str = "kimi-coding",
         model: str = "kimi-for-coding",
         timeout: float = 300.0,
@@ -107,18 +108,24 @@ class PiDevClient:
         self.provider = provider
         self.model = model
         self.timeout = timeout
-        self.stderr_log = Path(stderr_log) if stderr_log else Path("pi_dev_stderr.log")
+        self.stderr_log = (
+            Path(stderr_log)
+            if stderr_log
+            else Path(tempfile.mktemp(suffix="_pi_stderr.log"))
+        )
         self._proc: subprocess.Popen | None = None
         self._timer: threading.Timer | None = None
         self._max_turns_reached = False
+        self._terminated_by_us = False
+        self._last_stderr: str | None = None
 
     @property
-    def max_turns_reached(self) -> bool:
+    def max_turns_reached(self: "PiDevClient") -> bool:
         """Return True if the last run stopped due to max_turns."""
         return self._max_turns_reached
 
-    def run(
-        self,
+    def run(  # noqa: PLR0912
+        self: "PiDevClient",
         prompt: str,
         working_dir: Path | None = None,
         max_turns: int = 75,
@@ -141,6 +148,8 @@ class PiDevClient:
         cmd.append(prompt)
 
         stderr_fd = self.stderr_log.open("w")
+        self._last_stderr = None
+        self._terminated_by_us = False
         try:
             self._proc = subprocess.Popen(
                 cmd,
@@ -155,7 +164,11 @@ class PiDevClient:
                 self._timer = threading.Timer(self.timeout, self._kill)
                 self._timer.start()
 
-            yield from self._read_turns(max_turns)
+            try:
+                yield from self._read_turns(max_turns)
+            except PiDevError:
+                self._last_stderr = self._read_stderr()
+                raise
 
         finally:
             if self._timer:
@@ -176,20 +189,35 @@ class PiDevClient:
                     self._proc.wait(timeout=1)
                 self._proc = None
             stderr_fd.close()
+            if self._last_stderr is None:
+                self._last_stderr = self._read_stderr()
+            try:
+                self.stderr_log.unlink(missing_ok=True)
+            except Exception:
+                pass
 
-    def abort(self) -> None:
+    def abort(self: "PiDevClient") -> None:
         """Abort the running pi process."""
         self._kill()
 
-    def _kill(self) -> None:
+    def _kill(self: "PiDevClient") -> None:
+        self._terminated_by_us = True
         if self._proc:
             try:
                 os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
             except ProcessLookupError:
                 pass
 
+    def _read_stderr(self: "PiDevClient") -> str:
+        if not self.stderr_log.exists():
+            return ""
+        try:
+            return self.stderr_log.read_text()
+        except Exception:
+            return ""
+
     def _read_turns(  # noqa: PLR0912,PLR0915
-        self, max_turns: int
+        self: "PiDevClient", max_turns: int
     ) -> Iterator[TurnData]:
         if not self._proc or not self._proc.stdout:
             raise PiDevError("Process not started")
@@ -322,17 +350,31 @@ class PiDevClient:
                     )
 
         if not seen_assistant_end:
-            raise PiDevError("Premature EOF: no assistant message_end events received")
+            rc = self._proc.returncode if self._proc else None
+            msg = "Premature EOF: no assistant message_end events received"
+            if rc is not None and rc != 0 and not self._terminated_by_us:
+                msg += f" (pi exited with code {rc})"
+            raise PiDevError(msg)
 
         if pending_turn is not None:
             yield pending_turn
 
+        if self._proc and self._proc.poll() is not None:
+            rc = self._proc.returncode
+            if rc != 0 and not self._terminated_by_us:
+                raise PiDevError(f"pi exited with code {rc}")
+
         logger.info("pi stream ended after %d turns", assistant_count)
 
-    def __enter__(self) -> Self:
+    def __enter__(self: "PiDevClient") -> Self:
         """Enter context manager."""
         return self
 
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+    def __exit__(
+        self: "PiDevClient",
+        exc_type: object,
+        exc_val: object,
+        exc_tb: object,
+    ) -> None:
         """Exit context manager, ensuring cleanup."""
         self.abort()

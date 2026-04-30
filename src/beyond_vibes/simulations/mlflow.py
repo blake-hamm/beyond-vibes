@@ -42,6 +42,7 @@ class SimulationSession(BaseModel):
     git_diff: str | None = None
     system_prompt: str | None = None
     error: str | None = None
+    stderr_content: str | None = None
     total_cost: float = 0.0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
@@ -72,7 +73,7 @@ class MlflowTracer:
     """MLflow tracer - captures simulation data as traces for later DSPy eval."""
 
     def __init__(
-        self,
+        self: "MlflowTracer",
         experiment_name: str = "beyond-vibes",
         quant_tag: str | None = None,
         container_tag: str | None = None,
@@ -83,10 +84,11 @@ class MlflowTracer:
         self.session: SimulationSession | None = None
         self.quant_tag = quant_tag
         self.container_tag = container_tag
+        self._active_span: LiveSpan | None = None
 
     @contextmanager
     def log_simulation(
-        self,
+        self: "MlflowTracer",
         sim_config: SimulationConfig,
         model_config: ModelConfig,
     ) -> Generator["MlflowTracer", None, None]:
@@ -127,19 +129,36 @@ class MlflowTracer:
                 mlflow.set_tag("repository.url", sim_config.repository.url)
                 mlflow.set_tag("repository.branch", sim_config.repository.branch)
 
-                yield self
-
-                self._flush()
+                try:
+                    yield self
+                finally:
+                    try:
+                        self._flush()
+                    except Exception:
+                        logger.exception("Failed to flush session data to MLflow")
 
         except Exception as e:
-            logger.error("Failed to start MLflow run: %s", e)
+            if self.run_id is None:
+                logger.error("Failed to start MLflow run: %s", e)
             raise
 
-    def log_turn(self, turn: TurnData) -> None:
-        """Log a native pi turn as a span in the trace."""
+    def _end_active_span(self: "MlflowTracer") -> None:
+        """End the current active span if one exists."""
+        if self._active_span is not None:
+            self._active_span.end()
+            self._active_span = None
+
+    def log_turn(self: "MlflowTracer", turn: TurnData) -> None:
+        """Log a native pi turn as a span in the trace.
+
+        Keeps the span open so log_error() can mark it failed later.
+        """
         if self.session is None:
             logger.warning("No active session to log turn to")
             return
+
+        # Close previous turn's span before starting a new one
+        self._end_active_span()
 
         turn_index = turn.turn_index
         span_kwargs = {
@@ -155,6 +174,7 @@ class MlflowTracer:
             span_kwargs["start_time_ns"] = turn.timestamps.assistant_message_start_ns
 
         parent_span = mlflow.start_span_no_context(**span_kwargs)
+        self._active_span = parent_span
 
         readable_parts = []
         for block in turn.content:
@@ -223,14 +243,6 @@ class MlflowTracer:
         if perf_attrs:
             parent_span.set_attributes(perf_attrs)
 
-        end_kwargs = {}
-        if (
-            turn.timestamps is not None
-            and turn.timestamps.assistant_message_end_ns is not None
-        ):
-            end_kwargs["end_time_ns"] = turn.timestamps.assistant_message_end_ns
-        parent_span.end(**end_kwargs)
-
         self.session.total_cost += cost
         self.session.total_input_tokens += input_tokens
         self.session.total_output_tokens += output_tokens
@@ -240,7 +252,7 @@ class MlflowTracer:
         self.session.turns.append(turn)
 
     def _create_tool_span(
-        self,
+        self: "MlflowTracer",
         parent_span: LiveSpan,
         call: dict,
         result: dict,
@@ -282,7 +294,7 @@ class MlflowTracer:
         self._accumulate_tool_call(tool_name)
         child_span.end()
 
-    def _accumulate_tool_call(self, tool_name: str) -> None:
+    def _accumulate_tool_call(self: "MlflowTracer", tool_name: str) -> None:
         """Increment tool call count and track consecutive calls for loop detection."""
         if self.session is None:
             return
@@ -300,7 +312,7 @@ class MlflowTracer:
         self.session.tool_call_counts.setdefault(tool_name, 0)
         self.session.tool_call_counts[tool_name] += 1
 
-    def log_git_diff(self, diff_content: str) -> None:
+    def log_git_diff(self: "MlflowTracer", diff_content: str) -> None:
         """Log git diff as an artifact."""
         if self.session is None:
             logger.warning("No active session to log git diff to")
@@ -308,7 +320,7 @@ class MlflowTracer:
 
         self.session.git_diff = diff_content
 
-    def log_system_prompt(self, prompt: str) -> None:
+    def log_system_prompt(self: "MlflowTracer", prompt: str) -> None:
         """Log the system prompt for curation and traceability."""
         if self.session is None:
             logger.warning("No active session to log system prompt to")
@@ -316,15 +328,42 @@ class MlflowTracer:
 
         self.session.system_prompt = prompt
 
-    def log_error(self, error_message: str) -> None:
-        """Log an error that occurred during the simulation."""
+    def log_error(self: "MlflowTracer", error_message: str) -> None:
+        """Log an error that occurred during the simulation.
+
+        Marks the active turn span as ERROR so the trace shows red in MLflow.
+        """
         if self.session is None:
             logger.warning("No active session to log error to")
             return
 
         self.session.error = error_message
+        if self._active_span is not None:
+            self._active_span.set_status("ERROR")
+            self._active_span.add_event(
+                SpanEvent(
+                    "exception",
+                    attributes={
+                        "error.message": error_message,
+                        "error.type": "simulation_error",
+                    },
+                )
+            )
 
-    def set_completion_status(self, status: str) -> None:
+    def log_stderr(self: "MlflowTracer", stderr_content: str) -> None:
+        """Log pi stderr output for debugging process failures."""
+        if self.session is None:
+            logger.warning("No active session to log stderr to")
+            return
+
+        if self.session.stderr_content is not None:
+            return
+
+        self.session.stderr_content = stderr_content
+        if stderr_content:
+            mlflow.log_text(stderr_content, "pi_stderr.log")
+
+    def set_completion_status(self: "MlflowTracer", status: str) -> None:
         """Set the completion status of the simulation."""
         if self.session is None:
             logger.warning("No active session to set completion status")
@@ -332,7 +371,7 @@ class MlflowTracer:
 
         self.session.completion_status = status
 
-    def _aggregate_performance(self) -> None:
+    def _aggregate_performance(self: "MlflowTracer") -> None:
         """Compute performance aggregates from session turns."""
         turns = self.session.turns
 
@@ -371,7 +410,7 @@ class MlflowTracer:
                 + self.session.total_generation_time_s
             )
 
-    def _log_tool_metrics(self) -> int:
+    def _log_tool_metrics(self: "MlflowTracer") -> int:
         """Log tool call counts and return total."""
         total = 0
         for tool_name, count in self.session.tool_call_counts.items():
@@ -381,7 +420,7 @@ class MlflowTracer:
         mlflow.log_metric("tool_error_count", self.session.tool_error_count)
         return total
 
-    def _log_performance_metrics(self) -> None:
+    def _log_performance_metrics(self: "MlflowTracer") -> None:
         """Log computed performance metrics to MLflow."""
         metrics = [
             ("avg_ttft_s", self.session.avg_ttft_s),
@@ -395,7 +434,7 @@ class MlflowTracer:
             if value is not None:
                 mlflow.log_metric(name, value)
 
-    def _log_derived_metrics(self, total_tool_calls: int) -> None:
+    def _log_derived_metrics(self: "MlflowTracer", total_tool_calls: int) -> None:
         """Compute and log derived session metrics."""
         self.session.tool_total_calls = total_tool_calls
         self.session.tool_loop_detected = (
@@ -418,7 +457,7 @@ class MlflowTracer:
         mlflow.log_metric("token_efficiency", self.session.token_efficiency)
         mlflow.log_metric("cost_efficiency", self.session.cost_efficiency)
 
-    def _flush(self) -> None:
+    def _flush(self: "MlflowTracer") -> None:
         """Flush all accumulated data to MLflow."""
         if not self.run_id or self.session is None:
             return
@@ -443,6 +482,8 @@ class MlflowTracer:
 
         if self.session.error:
             mlflow.log_metric("has_error", 1)
+
+        self._end_active_span()
 
         total_tool_calls = self._log_tool_metrics()
         self._log_derived_metrics(total_tool_calls)
