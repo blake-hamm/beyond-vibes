@@ -55,6 +55,9 @@ class TurnData:
     # Raw timestamps (captured during streaming)
     timestamps: TurnTimestamps | None = None
 
+    # Error signaling from pi
+    error_message: str | None = None
+
     # Derived latency metrics (computed before yield)
     prompt_processing_s: float | None = None
     ttft_s: float | None = None
@@ -118,6 +121,7 @@ class PiDevClient:
         self._max_turns_reached = False
         self._terminated_by_us = False
         self._last_stderr: str | None = None
+        self._turns: list[TurnData] = []
 
     @property
     def max_turns_reached(self: "PiDevClient") -> bool:
@@ -150,6 +154,7 @@ class PiDevClient:
         stderr_fd = self.stderr_log.open("w")
         self._last_stderr = None
         self._terminated_by_us = False
+        self._turns = []
         try:
             self._proc = subprocess.Popen(
                 cmd,
@@ -246,6 +251,7 @@ class PiDevClient:
                 msg = event.get("message", {})
                 if msg.get("role") == "assistant":
                     if pending_turn is not None:
+                        self._turns.append(pending_turn)
                         yield pending_turn
                         pending_turn = None
                     current_turn = TurnData(turn_index=assistant_count)
@@ -306,6 +312,7 @@ class PiDevClient:
                     current_turn.content = msg.get("content", [])
                     current_turn.usage = msg.get("usage")
                     current_turn.stop_reason = msg.get("stopReason")
+                    current_turn.error_message = msg.get("errorMessage")
                     current_turn.timestamp = msg.get("timestamp")
                     current_turn.raw_message = msg
                     if current_turn.timestamps is None:
@@ -323,6 +330,7 @@ class PiDevClient:
                         self._max_turns_reached = True
                         self._kill()
                         if pending_turn is not None:
+                            self._turns.append(pending_turn)
                             yield pending_turn
                         return
 
@@ -357,6 +365,7 @@ class PiDevClient:
             raise PiDevError(msg)
 
         if pending_turn is not None:
+            self._turns.append(pending_turn)
             yield pending_turn
 
         if self._proc and self._proc.poll() is not None:

@@ -93,6 +93,7 @@ class TestPiDevClientRun:
         turn = turns[0]
         assert turn.turn_index == 0
         assert turn.stop_reason == "stop"
+        assert turn.error_message is None
         assert turn.usage is not None
         expected_input_tokens = 4634
         expected_output_tokens = 66
@@ -188,6 +189,38 @@ class TestPiDevClientRun:
             with patch("os.getpgid", return_value=1234):
                 with pytest.raises(PiDevError, match="Premature EOF"):
                     list(client.run("Test prompt"))
+
+    def test_run_captures_error_message(self: "TestPiDevClientRun") -> None:
+        """Test that errorMessage is captured when stopReason is error."""
+        client = PiDevClient()
+        lines = [
+            json.dumps(
+                {
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [],
+                        "usage": {"input": 0, "output": 0, "totalTokens": 0},
+                        "stopReason": "error",
+                        "errorMessage": "401 Incorrect API key",
+                    },
+                }
+            ),
+        ]
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(lines)
+        mock_proc.pid = 1234
+        mock_proc.poll.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("os.getpgid", return_value=1234):
+                turns = list(client.run("Test prompt"))
+
+        assert len(turns) == 1
+        assert turns[0].stop_reason == "error"
+        assert turns[0].error_message == "401 Incorrect API key"
+        assert client._turns == turns
 
     def test_run_max_turns(
         self: "TestPiDevClientRun", fixture_lines: list[str]
@@ -508,6 +541,7 @@ class TestTurnData:
         assert turn.tool_results == []
         assert turn.raw_message is None
         assert turn.timestamps is None
+        assert turn.error_message is None
         assert turn.prompt_processing_s is None
         assert turn.ttft_s is None
         assert turn.generation_time_s is None

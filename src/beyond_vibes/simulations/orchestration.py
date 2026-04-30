@@ -12,19 +12,6 @@ from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
 
-# Keywords that indicate a failure even when pi exits 0
-_STDERR_ERROR_KEYWORDS = (
-    "error",
-    "404",
-    "not found",
-    "failed",
-    "unauthorized",
-    "forbidden",
-    "timeout",
-    "connection refused",
-    "bad request",
-)
-
 
 class SimulationOrchestrator:
     """Streams turns from pi.dev CLI during simulation runs."""
@@ -91,15 +78,11 @@ class SimulationOrchestrator:
                     else:
                         logger.debug("No git diff to capture (no changes)")
 
-    def check_stderr_for_errors(self: "SimulationOrchestrator") -> str | None:
-        """Return stderr content if it contains error indicators."""
-        stderr = getattr(self.pi, "_last_stderr", None)
-        if not isinstance(stderr, str) or not stderr:
-            return None
-        lower = stderr.lower()
-        for kw in _STDERR_ERROR_KEYWORDS:
-            if kw in lower:
-                return stderr
+    def check_turn_errors(self: "SimulationOrchestrator") -> str | None:
+        """Return error message if any turn had stop_reason == 'error'."""
+        for turn in self.pi._turns or []:
+            if turn.stop_reason == "error" and turn.error_message:
+                return turn.error_message
         return None
 
 
@@ -140,13 +123,12 @@ def run_simulation(  # noqa: PLR0913
                 tracer.log_stderr(stderr)
             raise
 
-        # Detect failures even when pi exits 0 (e.g. fake model)
-        stderr_errors = orchestrator.check_stderr_for_errors()
-        if stderr_errors:
-            msg = f"pi stderr indicates failure:\n{stderr_errors}"
+        # Detect failures even when pi exits 0 (e.g. API errors)
+        turn_error = orchestrator.check_turn_errors()
+        if turn_error:
+            msg = f"pi turn failed: {turn_error}"
             logger.error(msg)
             tracer.log_error(msg)
-            tracer.log_stderr(stderr_errors)
             raise RuntimeError(msg)
 
         logger.info("Simulation completed")

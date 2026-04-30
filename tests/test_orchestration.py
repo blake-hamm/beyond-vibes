@@ -224,6 +224,37 @@ class TestSimulationOrchestratorRun:
         call_kwargs = mock_pi.run.call_args[1]
         assert call_kwargs["system_prompt"] == "You are a test"
 
+    def test_check_turn_errors_found(self: "TestSimulationOrchestratorRun") -> None:
+        """Test check_turn_errors returns message when a turn errored."""
+        mock_pi = MagicMock()
+        mock_tracer = MagicMock()
+        mock_sandbox = MagicMock()
+
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
+        error_turn = TurnData(
+            turn_index=0,
+            stop_reason="error",
+            error_message="API key invalid",
+        )
+        mock_pi._turns = [error_turn]
+
+        result = orchestrator.check_turn_errors()
+        assert result == "API key invalid"
+
+    def test_check_turn_errors_none(self: "TestSimulationOrchestratorRun") -> None:
+        """Test check_turn_errors returns None when no error turns."""
+        mock_pi = MagicMock()
+        mock_tracer = MagicMock()
+        mock_sandbox = MagicMock()
+
+        orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
+        mock_pi._turns = [
+            TurnData(turn_index=0, stop_reason="stop"),
+            TurnData(turn_index=1, stop_reason="toolUse"),
+        ]
+
+        assert orchestrator.check_turn_errors() is None
+
 
 class TestRunSimulation:
     """Tests for run_simulation function."""
@@ -249,7 +280,7 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter([])
-            mock_orchestrator.check_stderr_for_errors.return_value = None
+            mock_orchestrator.check_turn_errors.return_value = None
 
             run_simulation(
                 sim_config=mock_simulation_config,
@@ -290,7 +321,7 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter(test_turns)
-            mock_orchestrator.check_stderr_for_errors.return_value = None
+            mock_orchestrator.check_turn_errors.return_value = None
 
             run_simulation(
                 sim_config=mock_simulation_config,
