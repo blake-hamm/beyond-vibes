@@ -3,9 +3,9 @@ models:
   - name: k2p6
     provider: kimi-coding
     model_id: k2p6
-  - name: minimax-m2.5-free
-    provider: minimax
-    model_id: minimax-m2.5-free
+  - name: nemotron
+    provider: opencode
+    model_id: nemotron-3-super-free
   - name: qwen3-0.6B
     provider: local
     repo_id: unsloth/Qwen3-0.6B-GGUF

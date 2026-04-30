@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Self
@@ -22,6 +23,16 @@ class PiDevTimeoutError(PiDevError):
 
 
 @dataclass
+class TurnTimestamps:
+    """Raw wall-clock timestamps captured during JSONL streaming."""
+
+    user_message_end: float | None = None
+    assistant_message_start: float | None = None
+    assistant_message_end: float | None = None
+    first_update: float | None = None
+
+
+@dataclass
 class TurnData:
     """Native pi turn structure from assistant message_end event."""
 
@@ -33,6 +44,51 @@ class TurnData:
     tool_results: list[dict] = field(default_factory=list)
     raw_message: dict | None = None
     timestamp: int | None = None
+
+    # Raw timestamps (captured during streaming)
+    timestamps: TurnTimestamps | None = None
+
+    # Derived latency metrics (computed before yield)
+    prompt_processing_ms: float | None = None
+    ttft_ms: float | None = None
+    generation_time_ms: float | None = None
+    e2e_turn_ms: float | None = None
+    prompt_tps: float | None = None
+    generation_tps: float | None = None
+
+
+def compute_latency_metrics(turn: TurnData) -> None:
+    """Compute wall-clock derived metrics from TurnData.timestamps.
+
+    Mutates the TurnData in place. Called before yielding a turn.
+    """
+    ts = turn.timestamps
+    if ts is None:
+        return
+
+    usage = turn.usage or {}
+    input_tokens = usage.get("input", 0)
+    output_tokens = usage.get("output", 0)
+
+    if ts.assistant_message_start is not None and ts.user_message_end is not None:
+        turn.prompt_processing_ms = (
+            ts.assistant_message_start - ts.user_message_end
+        ) * 1000
+        turn.ttft_ms = turn.prompt_processing_ms
+
+    if ts.assistant_message_end is not None and ts.assistant_message_start is not None:
+        turn.generation_time_ms = (
+            ts.assistant_message_end - ts.assistant_message_start
+        ) * 1000
+
+    if ts.assistant_message_end is not None and ts.user_message_end is not None:
+        turn.e2e_turn_ms = (ts.assistant_message_end - ts.user_message_end) * 1000
+
+    if turn.prompt_processing_ms is not None and input_tokens > 0:
+        turn.prompt_tps = input_tokens / (turn.prompt_processing_ms / 1000)
+
+    if turn.generation_time_ms is not None and output_tokens > 0:
+        turn.generation_tps = output_tokens / (turn.generation_time_ms / 1000)
 
 
 class PiDevClient:
@@ -140,8 +196,10 @@ class PiDevClient:
         current_turn: TurnData | None = None
         pending_turn: TurnData | None = None
         seen_assistant_end = False
+        pending_user_message_end: float | None = None
 
         for raw_line in self._proc.stdout:
+            t_recv = time.perf_counter()
             line = raw_line.strip()
             if not line:
                 continue
@@ -160,9 +218,19 @@ class PiDevClient:
                         yield pending_turn
                         pending_turn = None
                     current_turn = TurnData(turn_index=assistant_count)
+                    current_turn.timestamps = TurnTimestamps(
+                        user_message_end=pending_user_message_end,
+                        assistant_message_start=t_recv,
+                    )
+                    pending_user_message_end = None
 
             elif event_type == "message_update":
                 if current_turn is not None:
+                    if (
+                        current_turn.timestamps
+                        and current_turn.timestamps.first_update is None
+                    ):
+                        current_turn.timestamps.first_update = t_recv
                     ame = event.get("assistantMessageEvent", {})
                     delta_type = ame.get("type")
                     if delta_type == "text_delta":
@@ -190,16 +258,28 @@ class PiDevClient:
 
             elif event_type == "message_end":
                 msg = event.get("message", {})
-                if msg.get("role") == "assistant":
+                role = msg.get("role")
+                if role == "user":
+                    pending_user_message_end = t_recv
+                    continue
+                if role == "assistant":
                     seen_assistant_end = True
                     if current_turn is None:
                         current_turn = TurnData(turn_index=assistant_count)
+                        current_turn.timestamps = TurnTimestamps(
+                            user_message_end=pending_user_message_end
+                        )
+                        pending_user_message_end = None
                     # message_end is source of truth for content
                     current_turn.content = msg.get("content", [])
                     current_turn.usage = msg.get("usage")
                     current_turn.stop_reason = msg.get("stopReason")
                     current_turn.timestamp = msg.get("timestamp")
                     current_turn.raw_message = msg
+                    if current_turn.timestamps is None:
+                        current_turn.timestamps = TurnTimestamps()
+                    current_turn.timestamps.assistant_message_end = t_recv
+                    compute_latency_metrics(current_turn)
 
                     pending_turn = current_turn
                     current_turn = None

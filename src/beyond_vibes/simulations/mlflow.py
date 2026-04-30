@@ -41,7 +41,9 @@ class MessagePerformanceMetrics:
 
     ttft_ms: float | None = None
     generation_time_ms: float | None = None
-    tps: float | None = None
+    generation_tps: float | None = None
+    prompt_tps: float | None = None
+    prompt_processing_ms: float | None = None
     output_tokens: int = 0
     has_tool_calls: bool = False
 
@@ -82,8 +84,10 @@ class SimulationSession(BaseModel):
     cost_efficiency: float | None = None
     message_metrics: list[MessagePerformanceMetrics] = Field(default_factory=list)
     avg_ttft_ms: float | None = None
-    avg_tps: float | None = None
+    avg_prompt_tps: float | None = None
+    avg_generation_tps: float | None = None
     total_generation_time_ms: float | None = None
+    total_prompt_processing_ms: float | None = None
 
 
 class MlflowTracer:
@@ -255,8 +259,8 @@ class MlflowTracer:
                 perf_attrs["perf.ttft_ms"] = perf_metrics.ttft_ms
             if perf_metrics.generation_time_ms is not None:
                 perf_attrs["perf.generation_time_ms"] = perf_metrics.generation_time_ms
-            if perf_metrics.tps is not None:
-                perf_attrs["perf.tps"] = perf_metrics.tps
+            if perf_metrics.generation_tps is not None:
+                perf_attrs["perf.generation_tps"] = perf_metrics.generation_tps
             perf_attrs["perf.has_tool_calls"] = perf_metrics.has_tool_calls
             if perf_attrs:
                 parent_span.set_attributes(perf_attrs)
@@ -286,7 +290,7 @@ class MlflowTracer:
         )
         self.session.messages.append(message_data)
 
-    def log_turn(self, turn: TurnData) -> None:
+    def log_turn(self, turn: TurnData) -> None:  # noqa: PLR0912, PLR0915
         """Log a native pi turn as a span in the trace.
 
         Creates a parent span for the turn and child spans for each tool
@@ -366,6 +370,31 @@ class MlflowTracer:
         if len(raw_json) > max_raw_len:
             raw_json = raw_json[:max_raw_len] + "... [truncated]"
         parent_span.set_attributes({"raw_message_json": raw_json})
+
+        # Compute and log performance metrics from TurnData
+        perf = MessagePerformanceMetrics(
+            ttft_ms=turn.ttft_ms,
+            generation_time_ms=turn.generation_time_ms,
+            generation_tps=turn.generation_tps,
+            prompt_tps=turn.prompt_tps,
+            prompt_processing_ms=turn.prompt_processing_ms,
+            output_tokens=output_tokens,
+            has_tool_calls=bool(turn.tool_calls),
+        )
+        self.session.message_metrics.append(perf)
+
+        perf_attrs = {}
+        if perf.ttft_ms is not None:
+            perf_attrs["perf.ttft_ms"] = perf.ttft_ms
+        if perf.prompt_tps is not None:
+            perf_attrs["perf.prompt_tps"] = perf.prompt_tps
+        if perf.generation_tps is not None:
+            perf_attrs["perf.generation_tps"] = perf.generation_tps
+        if perf.generation_time_ms is not None:
+            perf_attrs["perf.generation_time_ms"] = perf.generation_time_ms
+        perf_attrs["perf.has_tool_calls"] = perf.has_tool_calls
+        if perf_attrs:
+            parent_span.set_attributes(perf_attrs)
 
         parent_span.end()
 
@@ -622,7 +651,7 @@ class MlflowTracer:
         return MessagePerformanceMetrics(
             ttft_ms=ttft_ms,
             generation_time_ms=generation_time_ms,
-            tps=tps,
+            generation_tps=tps,
             output_tokens=output_tokens,
             has_tool_calls=has_tool_calls,
         )
@@ -722,21 +751,41 @@ class MlflowTracer:
             ttft_values = [
                 m.ttft_ms for m in self.session.message_metrics if m.ttft_ms is not None
             ]
-            tps_values = [
-                m.tps for m in self.session.message_metrics if m.tps is not None
+            generation_tps_values = [
+                m.generation_tps
+                for m in self.session.message_metrics
+                if m.generation_tps is not None
+            ]
+            prompt_tps_values = [
+                m.prompt_tps
+                for m in self.session.message_metrics
+                if m.prompt_tps is not None
             ]
             generation_times = [
                 m.generation_time_ms
                 for m in self.session.message_metrics
                 if m.generation_time_ms is not None
             ]
+            prompt_processing_times = [
+                m.prompt_processing_ms
+                for m in self.session.message_metrics
+                if m.prompt_processing_ms is not None
+            ]
 
             if ttft_values:
                 self.session.avg_ttft_ms = sum(ttft_values) / len(ttft_values)
-            if tps_values:
-                self.session.avg_tps = sum(tps_values) / len(tps_values)
+            if generation_tps_values:
+                self.session.avg_generation_tps = sum(generation_tps_values) / len(
+                    generation_tps_values
+                )
+            if prompt_tps_values:
+                self.session.avg_prompt_tps = sum(prompt_tps_values) / len(
+                    prompt_tps_values
+                )
             if generation_times:
                 self.session.total_generation_time_ms = sum(generation_times)
+            if prompt_processing_times:
+                self.session.total_prompt_processing_ms = sum(prompt_processing_times)
 
         # Log trace summary as JSON artifact for evaluators
         trace_session = self.session.model_dump(mode="json")
@@ -756,11 +805,18 @@ class MlflowTracer:
         # Log performance metrics
         if self.session.avg_ttft_ms is not None:
             mlflow.log_metric("avg_ttft_ms", self.session.avg_ttft_ms)
-        if self.session.avg_tps is not None:
-            mlflow.log_metric("avg_tps", self.session.avg_tps)
+        if self.session.avg_prompt_tps is not None:
+            mlflow.log_metric("avg_prompt_tps", self.session.avg_prompt_tps)
+        if self.session.avg_generation_tps is not None:
+            mlflow.log_metric("avg_generation_tps", self.session.avg_generation_tps)
         if self.session.total_generation_time_ms is not None:
             mlflow.log_metric(
                 "total_generation_time_ms", self.session.total_generation_time_ms
+            )
+        if self.session.total_prompt_processing_ms is not None:
+            mlflow.log_metric(
+                "total_prompt_processing_ms",
+                self.session.total_prompt_processing_ms,
             )
 
         # Set tags for filtering (in addition to metrics)

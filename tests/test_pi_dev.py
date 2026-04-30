@@ -11,6 +11,8 @@ from beyond_vibes.simulations.pi_dev import (
     PiDevClient,
     PiDevError,
     TurnData,
+    TurnTimestamps,
+    compute_latency_metrics,
 )
 
 
@@ -363,6 +365,113 @@ class TestPiDevClientToolRun:
         assert len(turns[0].tool_results) == 1
 
 
+class TestTurnTimestamps:
+    """Tests for TurnTimestamps dataclass."""
+
+    def test_defaults(self) -> None:
+        """Test TurnTimestamps default values."""
+        ts = TurnTimestamps()
+        assert ts.user_message_end is None
+        assert ts.assistant_message_start is None
+        assert ts.assistant_message_end is None
+        assert ts.first_update is None
+
+
+class TestComputeLatencyMetrics:
+    """Tests for compute_latency_metrics helper."""
+
+    def test_full_metrics(self) -> None:
+        """Test all metrics computed correctly."""
+        turn = TurnData(turn_index=0)
+        turn.timestamps = TurnTimestamps(
+            user_message_end=0.0,
+            assistant_message_start=1.0,
+            assistant_message_end=3.0,
+        )
+        turn.usage = {"input": 100, "output": 50}
+        compute_latency_metrics(turn)
+        assert turn.prompt_processing_ms == 1000.0  # noqa: PLR2004
+        assert turn.ttft_ms == 1000.0  # noqa: PLR2004
+        assert turn.generation_time_ms == 2000.0  # noqa: PLR2004
+        assert turn.e2e_turn_ms == 3000.0  # noqa: PLR2004
+        assert turn.prompt_tps == 100.0  # noqa: PLR2004
+        assert turn.generation_tps == 25.0  # noqa: PLR2004
+
+    def test_no_timestamps(self) -> None:
+        """Test nothing computed when timestamps missing."""
+        turn = TurnData(turn_index=0)
+        compute_latency_metrics(turn)
+        assert turn.prompt_processing_ms is None
+        assert turn.ttft_ms is None
+        assert turn.generation_time_ms is None
+
+    def test_zero_tokens(self) -> None:
+        """Test TPS is None when token counts are zero."""
+        turn = TurnData(turn_index=0)
+        turn.timestamps = TurnTimestamps(
+            user_message_end=0.0,
+            assistant_message_start=1.0,
+            assistant_message_end=2.0,
+        )
+        turn.usage = {"input": 0, "output": 0}
+        compute_latency_metrics(turn)
+        assert turn.prompt_tps is None
+        assert turn.generation_tps is None
+
+    def test_partial_timestamps(self) -> None:
+        """Test partial timestamps compute available metrics only."""
+        turn = TurnData(turn_index=0)
+        turn.timestamps = TurnTimestamps(
+            assistant_message_end=2.0,
+            assistant_message_start=1.0,
+        )
+        turn.usage = {"input": 10, "output": 20}
+        compute_latency_metrics(turn)
+        assert turn.prompt_processing_ms is None
+        assert turn.generation_time_ms == 1000.0  # noqa: PLR2004
+        assert turn.generation_tps == 20.0  # noqa: PLR2004
+        assert turn.prompt_tps is None
+
+
+class TestPiDevClientLatency:
+    """Tests for latency capture in _read_turns."""
+
+    def test_run_captures_timestamps(self, fixture_lines: list[str]) -> None:
+        """Test that run captures wall-clock timestamps."""
+        client = PiDevClient()
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(fixture_lines)
+        mock_proc.pid = 1234
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("os.getpgid", return_value=1234):
+                turns = list(client.run("Say hello"))
+
+        assert len(turns) == 1
+        turn = turns[0]
+        assert turn.timestamps is not None
+        assert turn.timestamps.user_message_end is not None
+        assert turn.timestamps.assistant_message_end is not None
+        assert turn.prompt_processing_ms is not None
+        assert turn.generation_time_ms is not None
+        assert turn.ttft_ms is not None
+
+    def test_run_captures_first_update(self, fixture_lines: list[str]) -> None:
+        """Test that first message_update timestamp is captured."""
+        client = PiDevClient()
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(fixture_lines)
+        mock_proc.pid = 1234
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with patch("os.getpgid", return_value=1234):
+                turns = list(client.run("Say hello"))
+
+        turn = turns[0]
+        assert turn.timestamps is not None
+        assert turn.timestamps.first_update is not None
+
+
 class TestTurnData:
     """Tests for TurnData dataclass."""
 
@@ -376,3 +485,10 @@ class TestTurnData:
         assert turn.tool_calls == []
         assert turn.tool_results == []
         assert turn.raw_message is None
+        assert turn.timestamps is None
+        assert turn.prompt_processing_ms is None
+        assert turn.ttft_ms is None
+        assert turn.generation_time_ms is None
+        assert turn.e2e_turn_ms is None
+        assert turn.prompt_tps is None
+        assert turn.generation_tps is None
