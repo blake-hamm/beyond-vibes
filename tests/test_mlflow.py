@@ -399,6 +399,8 @@ class TestLogTurn:
         tracer.session.total_cost = 0.0
         tracer.session.total_input_tokens = 0
         tracer.session.total_output_tokens = 0
+        tracer.session.total_cache_read_tokens = 0
+        tracer.session.total_cache_write_tokens = 0
         tracer.session.total_tokens = 0
         tracer.run_id = "run-123"
 
@@ -422,6 +424,140 @@ class TestLogTurn:
         assert tracer.session.total_input_tokens == 10  # noqa: PLR2004
         assert tracer.session.total_output_tokens == 5  # noqa: PLR2004
         assert tracer.session.total_tokens == 15  # noqa: PLR2004
+
+    def test_log_turn_accumulates_cache_tokens(self) -> None:
+        """Test that log_turn accumulates cache read/write tokens."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.turns = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.total_cost = 0.0
+        tracer.session.total_input_tokens = 0
+        tracer.session.total_output_tokens = 0
+        tracer.session.total_cache_read_tokens = 0
+        tracer.session.total_cache_write_tokens = 0
+        tracer.session.total_tokens = 0
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Hi"}],
+            usage={
+                "input": 10,
+                "output": 5,
+                "cacheRead": 100,
+                "cacheWrite": 50,
+                "totalTokens": 165,
+                "cost": {"total": 0.001},
+            },
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+            tracer.log_turn(turn)
+
+        assert tracer.session.total_cache_read_tokens == 100  # noqa: PLR2004
+        assert tracer.session.total_cache_write_tokens == 50  # noqa: PLR2004
+        assert tracer.session.total_tokens == 165  # noqa: PLR2004
+
+    def test_log_turn_computes_total_tokens_when_missing(self) -> None:
+        """Test total_tokens fallback when provider omits totalTokens field."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.turns = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.total_cost = 0.0
+        tracer.session.total_input_tokens = 0
+        tracer.session.total_output_tokens = 0
+        tracer.session.total_cache_read_tokens = 0
+        tracer.session.total_cache_write_tokens = 0
+        tracer.session.total_tokens = 0
+        tracer.run_id = "run-123"
+
+        turn = TurnData(
+            turn_index=0,
+            content=[{"type": "text", "text": "Hi"}],
+            usage={
+                "input": 10,
+                "output": 5,
+                "cacheRead": 100,
+                "cacheWrite": 50,
+            },
+        )
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+            tracer.log_turn(turn)
+
+        # 10 + 5 + 100 + 50 = 165
+        assert tracer.session.total_tokens == 165  # noqa: PLR2004
+
+    def test_session_token_math_adds_up(self) -> None:
+        """Test that session total_tokens equals sum of all token components."""
+        tracer = MlflowTracer()
+        tracer.session = MagicMock()
+        tracer.session.session_id = "session-123"
+        tracer.session.turns = []
+        tracer.session.llm_config.get_model_id.return_value = "test-model"
+        tracer.session.llm_config.provider = "local"
+        tracer.session.total_cost = 0.0
+        tracer.session.total_input_tokens = 0
+        tracer.session.total_output_tokens = 0
+        tracer.session.total_cache_read_tokens = 0
+        tracer.session.total_cache_write_tokens = 0
+        tracer.session.total_tokens = 0
+        tracer.run_id = "run-123"
+
+        turns = [
+            TurnData(
+                turn_index=0,
+                content=[{"type": "text", "text": "A"}],
+                usage={
+                    "input": 1000,
+                    "output": 500,
+                    "cacheRead": 2000,
+                    "cacheWrite": 100,
+                    "totalTokens": 3600,
+                },
+            ),
+            TurnData(
+                turn_index=1,
+                content=[{"type": "text", "text": "B"}],
+                usage={
+                    "input": 800,
+                    "output": 300,
+                    "cacheRead": 1500,
+                    "cacheWrite": 0,
+                    "totalTokens": 2600,
+                },
+            ),
+        ]
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            mock_span = MagicMock()
+            mock_mlflow.start_span_no_context.return_value = mock_span
+            for turn in turns:
+                tracer.log_turn(turn)
+
+        assert tracer.session.total_input_tokens == 1800  # noqa: PLR2004
+        assert tracer.session.total_output_tokens == 800  # noqa: PLR2004
+        assert tracer.session.total_cache_read_tokens == 3500  # noqa: PLR2004
+        assert tracer.session.total_cache_write_tokens == 100  # noqa: PLR2004
+        assert tracer.session.total_tokens == 6200  # noqa: PLR2004
+        # Verify the invariant: total_tokens == sum of all components
+        expected_total = (
+            tracer.session.total_input_tokens
+            + tracer.session.total_output_tokens
+            + tracer.session.total_cache_read_tokens
+            + tracer.session.total_cache_write_tokens
+        )
+        assert tracer.session.total_tokens == expected_total
 
     def test_log_turn_appends_turn(self) -> None:
         """Test that log_turn appends TurnData to session."""
