@@ -17,14 +17,14 @@ class TestExtractFinalMessage:
     """Tests for _extract_final_message function."""
 
     def test_with_text_parts(self) -> None:
-        """Test extraction with text and reasoning parts."""
+        """Test extraction with text and thinking blocks."""
         trace = {
-            "messages": [
+            "turns": [
                 {
                     "raw_message": {
-                        "parts": [
+                        "content": [
                             {"type": "text", "text": "Hello"},
-                            {"type": "reasoning", "reasoning": "Thinking..."},
+                            {"type": "thinking", "thinking": "Thinking..."},
                         ]
                     }
                 }
@@ -37,7 +37,7 @@ class TestExtractFinalMessage:
 
     def test_empty_trace(self) -> None:
         """Test empty trace returns empty string."""
-        assert _extract_final_message({"messages": []}) == ""
+        assert _extract_final_message({"turns": []}) == ""
 
     def test_no_messages_key(self) -> None:
         """Test missing messages key returns empty string."""
@@ -86,7 +86,7 @@ class TestLoadTraceSession:
         result = _load_trace_session("run-123")
 
         assert result["total_messages"] == 0
-        assert "messages" in result
+        assert "turns" in result
 
 
 class TestExtractRunData:
@@ -109,9 +109,7 @@ class TestExtractRunData:
 
         mock_artifact.return_value = "system prompt"
         mock_trace.return_value = {
-            "messages": [
-                {"raw_message": {"parts": [{"type": "text", "text": "Done"}]}}
-            ],
+            "turns": [{"raw_message": {"content": [{"type": "text", "text": "Done"}]}}],
         }
 
         result = extract_run_data("run-123")

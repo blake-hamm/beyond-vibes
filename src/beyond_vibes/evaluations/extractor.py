@@ -65,28 +65,28 @@ def _load_trace_session(run_id: str) -> dict[str, Any]:
             "token_efficiency": 0.0,
             "cost_efficiency": 0.0,
             "error_message_indices": [],
-            "messages": [],
+            "turns": [],
         }
 
 
 def _extract_final_message(trace: dict[str, Any]) -> str:
     """Extract final message content from trace."""
-    messages = trace.get("messages", [])
+    turns = trace.get("turns", [])
 
-    if not messages:
+    if not turns:
         return ""
 
-    last_message = messages[-1]
-    raw_message = last_message.get("raw_message", {})
-    parts = raw_message.get("parts", [])
+    last_turn = turns[-1]
+    raw_message = last_turn.get("raw_message", {})
+    content = raw_message.get("content", [])
     content_parts = []
 
-    for part in parts:
-        part_type = part.get("type", "")
-        if part_type == "text":
-            content_parts.append(part.get("text", ""))
-        elif part_type == "reasoning":
-            content_parts.append(part.get("reasoning", ""))
+    for block in content:
+        block_type = block.get("type", "")
+        if block_type == "text":
+            content_parts.append(block.get("text", ""))
+        elif block_type == "thinking":
+            content_parts.append(block.get("thinking", ""))
 
     return "\n".join(content_parts)
 
