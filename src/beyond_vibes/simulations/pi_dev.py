@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -129,7 +130,52 @@ class PiDevClient:
         """Return True if the last run stopped due to max_turns."""
         return self._max_turns_reached
 
-    def run(  # noqa: PLR0912
+    @staticmethod
+    def _build_sandbox_env(working_dir: Path | None) -> dict[str, str]:
+        """Create an isolated environment for the pi subprocess."""
+        env: dict[str, str] = {}
+
+        # Working directory as home prevents writes to ~/.ssh, ~/.config, etc.
+        env["HOME"] = str(working_dir) if working_dir else os.environ.get("HOME", "")
+        env["TMPDIR"] = str(working_dir / "tmp") if working_dir else "/tmp"
+        env["PYTHONNOUSERSITE"] = "1"
+        env["POETRY_VIRTUALENVS_CREATE"] = "true"
+        env["POETRY_VIRTUALENVS_IN_PROJECT"] = "true"
+
+        # Build PATH explicitly from resolved system paths — no inherited host PATH
+        path_dirs: list[str] = []
+        host_path = os.environ.get("PATH", "")
+        for cmd in ("git", "python3", "bash", "node"):
+            for p in host_path.split(":"):
+                low = p.lower()
+                if any(
+                    x in low
+                    for x in (
+                        ".venv",
+                        "venv",
+                        "virtualenv",
+                        "conda",
+                        "mamba",
+                        "pyenv",
+                    )
+                ):
+                    continue
+                found = shutil.which(cmd, path=p)
+                if found:
+                    path_dirs.append(str(Path(found).parent))
+                    break
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        env["PATH"] = ":".join(d for d in path_dirs if not (d in seen or seen.add(d)))
+
+        # Add only safe locale/terminal vars if they exist on host
+        for key in ("LANG", "LC_ALL", "TERM"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+
+        return env
+
+    def run(  # noqa: PLR0912,PLR0915
         self: "PiDevClient",
         prompt: str,
         working_dir: Path | None = None,
@@ -137,8 +183,11 @@ class PiDevClient:
         system_prompt: str | None = None,
     ) -> Iterator[TurnData]:
         """Run pi with prompt and yield TurnData for each assistant turn."""
+        pi_bin = shutil.which("pi")
+        if pi_bin is None:
+            raise PiDevError("pi CLI not found in PATH")
         cmd = [
-            "pi",
+            pi_bin,
             "--mode",
             "json",
             "--no-session",
@@ -157,6 +206,7 @@ class PiDevClient:
         self._terminated_by_us = False
         self._timed_out = False
         self._turns = []
+        clean_env = self._build_sandbox_env(working_dir)
         try:
             self._proc = subprocess.Popen(
                 cmd,
@@ -164,6 +214,7 @@ class PiDevClient:
                 stderr=stderr_fd,
                 text=True,
                 cwd=working_dir,
+                env=clean_env,
                 preexec_fn=os.setsid,  # noqa: S603,PLW1509 — new process group for killpg
             )
 

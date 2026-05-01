@@ -11,7 +11,8 @@ repository:
 max_turns: 25
 capture_git_diff: true
 system_prompt: |
-  You are running on NixOS. Never ask for human feedback or confirmation.
+  You are running on NixOS inside a temporary sandbox.
+  Never ask for human feedback or confirmation.
   Just proceed with the best approach and explain what you did afterward.
 prompt: |
   You are an expert DevOps engineer. Migrate this project from poetry to uv.
@@ -23,6 +24,11 @@ prompt: |
   - Replace poetry.lock with uv.lock
   - Ensure pyproject.toml is compatible with uv
   - Remove any poetry-specific configuration
+
+  CRITICAL — Environment:
+  - You are in a temp sandbox. Do NOT modify system Python, the Nix store, or any parent project venv.
+  - Do NOT use `--break-system-packages`.
+  - If `uv` or `python3` pick up the wrong environment, create a local venv inside the project.
 
   Steps:
   1. Update cruft
