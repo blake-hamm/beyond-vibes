@@ -183,6 +183,8 @@ class MlflowTracer:
                 readable_parts.append({"type": "text", "content": text})
             elif block_type == "thinking" and (text := block.get("thinking")):
                 readable_parts.append({"type": "thinking", "content": text})
+            else:
+                readable_parts.append(block)
 
         parent_span.set_inputs({"turn_index": turn_index, "role": "assistant"})
         parent_span.set_outputs({"content": readable_parts})
