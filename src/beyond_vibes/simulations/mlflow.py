@@ -2,9 +2,9 @@
 
 import json
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Generator
 
 import mlflow
 from mlflow.entities.span import LiveSpan, SpanType
@@ -16,6 +16,8 @@ from beyond_vibes.simulations.models import SimulationConfig
 from beyond_vibes.simulations.pi_dev import TurnData
 
 logger = logging.getLogger(__name__)
+
+MAX_RAW_JSON_LEN = 4096
 
 
 def generate_session_id(model_config: ModelConfig, quant_tag: str | None = None) -> str:
@@ -53,10 +55,6 @@ class SimulationSession(BaseModel):
     tool_error_count: int = 0
     completion_status: str | None = None
     tool_loop_threshold: int = 3
-    tool_last_name: str | None = None
-    tool_consecutive_calls: int = 0
-    tool_max_consecutive_calls: int = 0
-    error_message_indices: list[int] = Field(default_factory=list)
     tool_total_calls: int | None = None
     tool_loop_detected: bool | None = None
     tool_error_rate: float | None = None
@@ -73,7 +71,7 @@ class MlflowTracer:
     """MLflow tracer - captures simulation data as traces for later DSPy eval."""
 
     def __init__(
-        self: "MlflowTracer",
+        self,
         experiment_name: str = "beyond-vibes",
         quant_tag: str | None = None,
         container_tag: str | None = None,
@@ -85,13 +83,16 @@ class MlflowTracer:
         self.quant_tag = quant_tag
         self.container_tag = container_tag
         self._active_span: LiveSpan | None = None
+        self._tool_last_name: str | None = None
+        self._tool_consecutive_calls: int = 0
+        self._tool_max_consecutive_calls: int = 0
 
     @contextmanager
     def log_simulation(
-        self: "MlflowTracer",
+        self,
         sim_config: SimulationConfig,
         model_config: ModelConfig,
-    ) -> Generator["MlflowTracer", None, None]:
+    ) -> Iterator["MlflowTracer"]:
         """Context manager for tracing a simulation run."""
         session_id = generate_session_id(model_config, self.quant_tag)
 
@@ -136,19 +137,24 @@ class MlflowTracer:
                         self._flush()
                     except Exception:
                         logger.exception("Failed to flush session data to MLflow")
+                        try:
+                            mlflow.set_tag("run.status", "flush_error")
+                        except Exception:
+                            pass
+                        raise
 
         except Exception as e:
             if self.run_id is None:
                 logger.error("Failed to start MLflow run: %s", e)
             raise
 
-    def _end_active_span(self: "MlflowTracer") -> None:
+    def _end_active_span(self) -> None:
         """End the current active span if one exists."""
         if self._active_span is not None:
             self._active_span.end()
             self._active_span = None
 
-    def log_turn(self: "MlflowTracer", turn: TurnData) -> None:
+    def log_turn(self, turn: TurnData) -> None:  # noqa: PLR0915
         """Log a native pi turn as a span in the trace.
 
         Keeps the span open so log_error() can mark it failed later.
@@ -223,12 +229,17 @@ class MlflowTracer:
         }
         for call in turn.tool_calls:
             result = results_by_id.get(call.get("toolCallId", ""), {})
-            self._create_tool_span(parent_span, call, result, turn_index)
+            self._create_tool_span(parent_span, call, result)
 
-        raw_json = json.dumps(turn.raw_message) if turn.raw_message else ""
-        max_raw_len = 4096
-        if len(raw_json) > max_raw_len:
-            raw_json = raw_json[:max_raw_len] + "... [truncated]"
+        if turn.raw_message:
+            try:
+                raw_json = json.dumps(turn.raw_message)
+            except TypeError:
+                raw_json = "[unserializable]"
+        else:
+            raw_json = ""
+        if len(raw_json) > MAX_RAW_JSON_LEN:
+            raw_json = raw_json[:MAX_RAW_JSON_LEN] + "... [truncated]"
         parent_span.set_attributes({"raw_message_json": raw_json})
 
         perf_attrs = {
@@ -254,11 +265,10 @@ class MlflowTracer:
         self.session.turns.append(turn)
 
     def _create_tool_span(
-        self: "MlflowTracer",
+        self,
         parent_span: LiveSpan,
         call: dict,
         result: dict,
-        turn_index: int,
     ) -> None:
         """Create a child span for a pi tool execution."""
         tool_name = call.get("toolName", "unknown")
@@ -278,7 +288,6 @@ class MlflowTracer:
             child_span.set_status("ERROR")
             if self.session is not None:
                 self.session.tool_error_count += 1
-                self.session.error_message_indices.append(turn_index)
 
             error_message = result.get("result", "Tool execution failed")
             child_span.add_event(
@@ -296,25 +305,25 @@ class MlflowTracer:
         self._accumulate_tool_call(tool_name)
         child_span.end()
 
-    def _accumulate_tool_call(self: "MlflowTracer", tool_name: str) -> None:
+    def _accumulate_tool_call(self, tool_name: str) -> None:
         """Increment tool call count and track consecutive calls for loop detection."""
         if self.session is None:
             return
 
-        if tool_name == self.session.tool_last_name:
-            self.session.tool_consecutive_calls += 1
-            self.session.tool_max_consecutive_calls = max(
-                self.session.tool_max_consecutive_calls,
-                self.session.tool_consecutive_calls,
+        if tool_name == self._tool_last_name:
+            self._tool_consecutive_calls += 1
+            self._tool_max_consecutive_calls = max(
+                self._tool_max_consecutive_calls,
+                self._tool_consecutive_calls,
             )
         else:
-            self.session.tool_consecutive_calls = 1
-            self.session.tool_last_name = tool_name
+            self._tool_consecutive_calls = 1
+            self._tool_last_name = tool_name
 
         self.session.tool_call_counts.setdefault(tool_name, 0)
         self.session.tool_call_counts[tool_name] += 1
 
-    def log_git_diff(self: "MlflowTracer", diff_content: str) -> None:
+    def log_git_diff(self, diff_content: str) -> None:
         """Log git diff as an artifact."""
         if self.session is None:
             logger.warning("No active session to log git diff to")
@@ -322,7 +331,7 @@ class MlflowTracer:
 
         self.session.git_diff = diff_content
 
-    def log_system_prompt(self: "MlflowTracer", prompt: str) -> None:
+    def log_system_prompt(self, prompt: str) -> None:
         """Log the system prompt for curation and traceability."""
         if self.session is None:
             logger.warning("No active session to log system prompt to")
@@ -330,7 +339,7 @@ class MlflowTracer:
 
         self.session.system_prompt = prompt
 
-    def log_error(self: "MlflowTracer", error_message: str) -> None:
+    def log_error(self, error_message: str) -> None:
         """Log an error that occurred during the simulation.
 
         Marks the active turn span as ERROR so the trace shows red in MLflow.
@@ -352,20 +361,23 @@ class MlflowTracer:
                 )
             )
 
-    def log_stderr(self: "MlflowTracer", stderr_content: str) -> None:
+    def log_stderr(self, stderr_content: str) -> None:
         """Log pi stderr output for debugging process failures."""
         if self.session is None:
             logger.warning("No active session to log stderr to")
             return
 
-        if self.session.stderr_content is not None:
-            return
+        if self.session.stderr_content:
+            self.session.stderr_content += (
+                "\n\n--- stderr continuation ---\n\n" + stderr_content
+            )
+        else:
+            self.session.stderr_content = stderr_content
 
-        self.session.stderr_content = stderr_content
-        if stderr_content:
-            mlflow.log_text(stderr_content, "pi_stderr.log")
+        if self.session.stderr_content:
+            mlflow.log_text(self.session.stderr_content, "pi_stderr.log")
 
-    def set_completion_status(self: "MlflowTracer", status: str) -> None:
+    def set_completion_status(self, status: str) -> None:
         """Set the completion status of the simulation."""
         if self.session is None:
             logger.warning("No active session to set completion status")
@@ -373,7 +385,7 @@ class MlflowTracer:
 
         self.session.completion_status = status
 
-    def _aggregate_performance(self: "MlflowTracer") -> None:
+    def _aggregate_performance(self) -> None:
         """Compute performance aggregates from session turns."""
         turns = self.session.turns
 
@@ -389,17 +401,15 @@ class MlflowTracer:
         self.session.avg_generation_tps = _mean(
             [t.generation_tps for t in turns if t.generation_tps is not None]
         )
-        self.session.total_generation_time_s = (
-            sum(t.generation_time_s for t in turns if t.generation_time_s is not None)
-            or None
-        )
+        gen_times = [
+            t.generation_time_s for t in turns if t.generation_time_s is not None
+        ]
+        self.session.total_generation_time_s = sum(gen_times) if gen_times else None
+        prompt_times = [
+            t.prompt_processing_s for t in turns if t.prompt_processing_s is not None
+        ]
         self.session.total_prompt_processing_s = (
-            sum(
-                t.prompt_processing_s
-                for t in turns
-                if t.prompt_processing_s is not None
-            )
-            or None
+            sum(prompt_times) if prompt_times else None
         )
 
         # Total inference time = prompt processing + generation (actual model compute)
@@ -412,7 +422,7 @@ class MlflowTracer:
                 + self.session.total_generation_time_s
             )
 
-    def _log_tool_metrics(self: "MlflowTracer") -> int:
+    def _log_tool_metrics(self) -> int:
         """Log tool call counts and return total."""
         total = 0
         for tool_name, count in self.session.tool_call_counts.items():
@@ -422,7 +432,7 @@ class MlflowTracer:
         mlflow.log_metric("tool_error_count", self.session.tool_error_count)
         return total
 
-    def _log_performance_metrics(self: "MlflowTracer") -> None:
+    def _log_performance_metrics(self) -> None:
         """Log computed performance metrics to MLflow."""
         metrics = [
             ("avg_ttft_s", self.session.avg_ttft_s),
@@ -436,11 +446,11 @@ class MlflowTracer:
             if value is not None:
                 mlflow.log_metric(name, value)
 
-    def _log_derived_metrics(self: "MlflowTracer", total_tool_calls: int) -> None:
+    def _log_derived_metrics(self, total_tool_calls: int) -> None:
         """Compute and log derived session metrics."""
         self.session.tool_total_calls = total_tool_calls
         self.session.tool_loop_detected = (
-            self.session.tool_max_consecutive_calls > self.session.tool_loop_threshold
+            self._tool_max_consecutive_calls > self.session.tool_loop_threshold
         )
         self.session.tool_error_rate = self.session.tool_error_count / max(
             total_tool_calls, 1
@@ -453,58 +463,59 @@ class MlflowTracer:
             "tool_loop_detected", 1 if self.session.tool_loop_detected else 0
         )
         mlflow.log_metric(
-            "tool_max_consecutive_calls", self.session.tool_max_consecutive_calls
+            "tool_max_consecutive_calls", self._tool_max_consecutive_calls
         )
         mlflow.log_metric("tool_error_rate", self.session.tool_error_rate)
         mlflow.log_metric("token_efficiency", self.session.token_efficiency)
         mlflow.log_metric("cost_efficiency", self.session.cost_efficiency)
 
-    def _flush(self: "MlflowTracer") -> None:
+    def _flush(self) -> None:
         """Flush all accumulated data to MLflow."""
         if not self.run_id or self.session is None:
             return
 
-        self.session.completed_at = datetime.now()
-        self.session.total_messages = len(self.session.turns)
+        try:
+            self.session.completed_at = datetime.now()
+            self.session.total_messages = len(self.session.turns)
 
-        mlflow.log_metric("total_messages", self.session.total_messages)
-        self._aggregate_performance()
-        self._log_performance_metrics()
+            mlflow.log_metric("total_messages", self.session.total_messages)
+            self._aggregate_performance()
+            self._log_performance_metrics()
 
-        mlflow.log_metric("total_cost", self.session.total_cost)
-        mlflow.log_metric("total_input_tokens", self.session.total_input_tokens)
-        mlflow.log_metric("total_output_tokens", self.session.total_output_tokens)
-        mlflow.log_metric(
-            "total_cache_read_tokens", self.session.total_cache_read_tokens
-        )
-        mlflow.log_metric(
-            "total_cache_write_tokens", self.session.total_cache_write_tokens
-        )
-        mlflow.log_metric("total_tokens", self.session.total_tokens)
+            mlflow.log_metric("total_cost", self.session.total_cost)
+            mlflow.log_metric("total_input_tokens", self.session.total_input_tokens)
+            mlflow.log_metric("total_output_tokens", self.session.total_output_tokens)
+            mlflow.log_metric(
+                "total_cache_read_tokens", self.session.total_cache_read_tokens
+            )
+            mlflow.log_metric(
+                "total_cache_write_tokens", self.session.total_cache_write_tokens
+            )
+            mlflow.log_metric("total_tokens", self.session.total_tokens)
 
-        if self.session.error:
-            mlflow.log_metric("has_error", 1)
+            if self.session.error:
+                mlflow.log_metric("has_error", 1)
 
-        self._end_active_span()
+            total_tool_calls = self._log_tool_metrics()
+            self._log_derived_metrics(total_tool_calls)
 
-        total_tool_calls = self._log_tool_metrics()
-        self._log_derived_metrics(total_tool_calls)
+            trace_session = self.session.model_dump(mode="json")
+            mlflow.log_dict(trace_session, "trace_session.json")
 
-        trace_session = self.session.model_dump(mode="json")
-        mlflow.log_dict(trace_session, "trace_session.json")
+            mlflow.set_tag("run.status", "error" if self.session.error else "success")
+            mlflow.set_tag(
+                "run.completion_status", self.session.completion_status or "unknown"
+            )
+            mlflow.set_tag("has_git_diff", "true" if self.session.git_diff else "false")
+            date_str = self.session.completed_at.strftime("%Y-%m-%d")
+            mlflow.set_tag("simulation.date", date_str)
 
-        mlflow.set_tag("run.status", "error" if self.session.error else "success")
-        mlflow.set_tag(
-            "run.completion_status", self.session.completion_status or "unknown"
-        )
-        mlflow.set_tag("has_git_diff", "true" if self.session.git_diff else "false")
-        date_str = self.session.completed_at.strftime("%Y-%m-%d")
-        mlflow.set_tag("simulation.date", date_str)
+            if self.session.git_diff:
+                mlflow.log_text(self.session.git_diff, "git_diff.patch")
 
-        if self.session.git_diff:
-            mlflow.log_text(self.session.git_diff, "git_diff.patch")
+            if self.session.system_prompt:
+                mlflow.log_text(self.session.system_prompt, "system_prompt.txt")
 
-        if self.session.system_prompt:
-            mlflow.log_text(self.session.system_prompt, "system_prompt.txt")
-
-        logger.info("Flushed session data to MLflow run %s", self.run_id)
+            logger.info("Flushed session data to MLflow run %s", self.run_id)
+        finally:
+            self._end_active_span()
