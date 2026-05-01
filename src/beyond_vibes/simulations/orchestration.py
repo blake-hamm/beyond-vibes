@@ -7,7 +7,7 @@ from typing import Generator
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.mlflow import MlflowTracer
 from beyond_vibes.simulations.models import SimulationConfig
-from beyond_vibes.simulations.pi_dev import PiDevClient, TurnData
+from beyond_vibes.simulations.pi_dev import PiDevClient, PiDevTimeoutError, TurnData
 from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
@@ -56,15 +56,29 @@ class SimulationOrchestrator:
                     max_turns=max_turns,
                     system_prompt=system_prompt,
                 ):
-                    logger.debug("Yielding turn %d", turn.turn_index)
+                    logger.debug(
+                        "Yielding turn %d (stop_reason=%s)",
+                        turn.turn_index,
+                        turn.stop_reason,
+                    )
                     yield turn
 
+                logger.debug(
+                    "pi.run() generator exhausted: max_turns_reached=%s turns=%d",
+                    self.pi.max_turns_reached,
+                    len(self.pi._turns),
+                )
                 if self.pi.max_turns_reached:
                     logger.warning("Max turns (%d) reached for simulation", max_turns)
                     self._completion_status = "max_turns"
                 else:
                     self._completion_status = "completed"
+                    logger.info("Simulation completed naturally")
 
+            except PiDevTimeoutError:
+                logger.warning("Simulation timed out after %ds", self.pi.timeout)
+                self._completion_status = "timeout"
+                raise
             except Exception:
                 logger.exception("Simulation interrupted")
                 self._completion_status = "error"
@@ -124,6 +138,11 @@ def run_simulation(  # noqa: PLR0913
             raise
 
         # Detect failures even when pi exits 0 (e.g. API errors)
+        logger.debug(
+            "Post-run check: completion_status=%s turns=%d",
+            orchestrator.completion_status,
+            len(pi_client._turns),
+        )
         turn_error = orchestrator.check_turn_errors()
         if turn_error:
             msg = f"pi turn failed: {turn_error}"
@@ -131,4 +150,4 @@ def run_simulation(  # noqa: PLR0913
             tracer.log_error(msg)
             raise RuntimeError(msg)
 
-        logger.info("Simulation completed")
+        logger.info("Simulation completed successfully")

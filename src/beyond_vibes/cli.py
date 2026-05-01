@@ -143,6 +143,7 @@ def simulate(  # noqa: PLR0913
     with PiDevClient(
         provider=model_config.provider,
         model=model_config.get_model_id(),
+        timeout=settings.simulation_timeout,
     ) as pi_client:
         sim_logger = SimulationLogger(quant_tag=quant_tag)
 

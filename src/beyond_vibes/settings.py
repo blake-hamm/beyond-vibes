@@ -57,6 +57,10 @@ class Settings(BaseSettings):
         default=15000,
         description="Maximum characters for git diff when used as context",
     )
+    simulation_timeout: float = Field(
+        default=2400.0,
+        description="Timeout in seconds for pi.dev simulation runs",
+    )
 
     @field_validator("log_level", mode="before")
     @classmethod

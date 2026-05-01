@@ -104,7 +104,7 @@ class PiDevClient:
         self: "PiDevClient",
         provider: str = "kimi-coding",
         model: str = "kimi-for-coding",
-        timeout: float = 300.0,
+        timeout: float = 2400.0,
         stderr_log: Path | str | None = None,
     ) -> None:
         """Initialize the pi.dev client."""
@@ -120,6 +120,7 @@ class PiDevClient:
         self._timer: threading.Timer | None = None
         self._max_turns_reached = False
         self._terminated_by_us = False
+        self._timed_out = False
         self._last_stderr: str | None = None
         self._turns: list[TurnData] = []
 
@@ -154,6 +155,7 @@ class PiDevClient:
         stderr_fd = self.stderr_log.open("w")
         self._last_stderr = None
         self._terminated_by_us = False
+        self._timed_out = False
         self._turns = []
         try:
             self._proc = subprocess.Popen(
@@ -166,7 +168,7 @@ class PiDevClient:
             )
 
             if self.timeout > 0:
-                self._timer = threading.Timer(self.timeout, self._kill)
+                self._timer = threading.Timer(self.timeout, self._timeout)
                 self._timer.start()
 
             try:
@@ -203,6 +205,10 @@ class PiDevClient:
 
     def abort(self: "PiDevClient") -> None:
         """Abort the running pi process."""
+        self._kill()
+
+    def _timeout(self: "PiDevClient") -> None:
+        self._timed_out = True
         self._kill()
 
     def _kill(self: "PiDevClient") -> None:
@@ -250,7 +256,12 @@ class PiDevClient:
             if event_type == "message_start":
                 msg = event.get("message", {})
                 if msg.get("role") == "assistant":
+                    logger.debug("message_start (assistant) turn=%d", assistant_count)
                     if pending_turn is not None:
+                        logger.debug(
+                            "Yielding pending turn %d",
+                            pending_turn.turn_index,
+                        )
                         self._turns.append(pending_turn)
                         yield pending_turn
                         pending_turn = None
@@ -302,6 +313,13 @@ class PiDevClient:
                     continue
                 if role == "assistant":
                     seen_assistant_end = True
+                    sr = msg.get("stopReason")
+                    em = msg.get("errorMessage")
+                    logger.debug(
+                        "message_end (assistant) stop_reason=%s error=%s",
+                        sr,
+                        em,
+                    )
                     if current_turn is None:
                         current_turn = TurnData(turn_index=assistant_count)
                         current_turn.timestamps = TurnTimestamps(
@@ -311,8 +329,8 @@ class PiDevClient:
                     # message_end is source of truth for content
                     current_turn.content = msg.get("content", [])
                     current_turn.usage = msg.get("usage")
-                    current_turn.stop_reason = msg.get("stopReason")
-                    current_turn.error_message = msg.get("errorMessage")
+                    current_turn.stop_reason = sr
+                    current_turn.error_message = em
                     current_turn.timestamp = msg.get("timestamp")
                     current_turn.raw_message = msg
                     if current_turn.timestamps is None:
@@ -325,6 +343,12 @@ class PiDevClient:
                     current_turn = None
                     assistant_count += 1
 
+                    logger.debug(
+                        "Turn %d complete: stop_reason=%s error_message=%s",
+                        pending_turn.turn_index,
+                        pending_turn.stop_reason,
+                        pending_turn.error_message,
+                    )
                     if assistant_count >= max_turns:
                         logger.info("Max turns (%d) reached, terminating pi", max_turns)
                         self._max_turns_reached = True
@@ -357,19 +381,38 @@ class PiDevClient:
                         }
                     )
 
+        rc = self._proc.returncode if self._proc else None
+        logger.debug(
+            "pi stdout exhausted: "
+            "seen_assistant_end=%s terminated_by_us=%s "
+            "returncode=%s turns=%d",
+            seen_assistant_end,
+            self._terminated_by_us,
+            rc,
+            assistant_count,
+        )
+
+        if self._timed_out and not self._max_turns_reached:
+            raise PiDevTimeoutError(
+                f"pi timed out after {self.timeout}s ({assistant_count} turns)"
+            )
+
         if not seen_assistant_end:
-            rc = self._proc.returncode if self._proc else None
             msg = "Premature EOF: no assistant message_end events received"
             if rc is not None and rc != 0 and not self._terminated_by_us:
                 msg += f" (pi exited with code {rc})"
             raise PiDevError(msg)
 
         if pending_turn is not None:
+            logger.debug(
+                "Yielding final pending turn %d: stop_reason=%s",
+                pending_turn.turn_index,
+                pending_turn.stop_reason,
+            )
             self._turns.append(pending_turn)
             yield pending_turn
 
         if self._proc and self._proc.poll() is not None:
-            rc = self._proc.returncode
             if rc != 0 and not self._terminated_by_us:
                 raise PiDevError(f"pi exited with code {rc}")
 

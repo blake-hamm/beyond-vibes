@@ -31,7 +31,7 @@ class TestPiDevClientInit:
         client = PiDevClient()
         assert client.provider == "kimi-coding"
         assert client.model == "kimi-for-coding"
-        expected_timeout = 300.0
+        expected_timeout = 2400.0
         assert client.timeout == expected_timeout
         assert client.stderr_log.name.endswith("_pi_stderr.log")
 
