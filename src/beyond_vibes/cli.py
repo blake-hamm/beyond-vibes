@@ -140,22 +140,20 @@ def simulate(  # noqa: PLR0913
 
     sandbox = SandboxManager()
 
-    with PiDevClient(
+    pi_client = PiDevClient(
         provider=model_config.provider,
         model=model_config.get_model_id(),
         timeout=settings.simulation_timeout,
-    ) as pi_client:
-        sim_logger = SimulationLogger(quant_tag=quant_tag)
+    )
+    sim_logger = SimulationLogger(quant_tag=quant_tag)
 
-        try:
-            run_simulation(
-                sim_config, model_config, sandbox, pi_client, sim_logger, prompt
-            )
-        except Exception as e:
-            sandbox.cleanup()
-            logger.info("Sandbox cleaned up")
-            logger.error("Simulation failed: %s", e)
-            raise typer.Exit(code=1) from e
+    try:
+        run_simulation(sim_config, model_config, sandbox, pi_client, sim_logger, prompt)
+    except Exception as e:
+        sandbox.cleanup()
+        logger.info("Sandbox cleaned up")
+        logger.error("Simulation failed: %s", e)
+        raise typer.Exit(code=1) from e
 
     sandbox.cleanup()
     logger.info("Sandbox cleaned up")

@@ -203,7 +203,7 @@ class TestLogTurn:
                 "cost": {"total": 0.001},
             },
             stop_reason="stop",
-            raw_message={"role": "assistant", "responseId": "msg_abc"},
+            response_id="msg_abc",
         )
 
     def test_log_turn_no_session(self) -> None:
@@ -286,7 +286,7 @@ class TestLogTurn:
                 "cost": {"total": 0.005},
             },
             stop_reason="toolUse",
-            raw_message={"responseId": "msg_xyz"},
+            response_id="msg_xyz",
         )
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
@@ -575,7 +575,7 @@ class TestLogTurn:
             turn_index=3,
             content=[{"type": "text", "text": "Hi"}],
             usage={},
-            raw_message={"role": "assistant"},
+            response_id="msg_def",
         )
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
@@ -585,7 +585,7 @@ class TestLogTurn:
 
         assert len(tracer.session.turns) == 1  # noqa: PLR2004
         assert tracer.session.turns[0].turn_index == 3  # noqa: PLR2004
-        assert tracer.session.turns[0].raw_message == {"role": "assistant"}
+        assert tracer.session.turns[0].response_id == "msg_def"
 
     def test_log_turn_sets_perf_attributes(self, mock_turn: TurnData) -> None:
         """Test that log_turn sets performance span attributes."""
@@ -1023,7 +1023,6 @@ class TestFlush:
             usage={},
             prompt_processing_time_seconds=0.1,
             generation_time_seconds=0.2,
-            end_to_end_turn_time_seconds=0.3,
         )
         turn2 = TurnData(
             turn_index=1,
@@ -1031,7 +1030,6 @@ class TestFlush:
             usage={},
             prompt_processing_time_seconds=0.05,
             generation_time_seconds=0.1,
-            end_to_end_turn_time_seconds=0.15,
         )
 
         session = MagicMock()

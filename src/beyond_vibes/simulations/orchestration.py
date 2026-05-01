@@ -7,7 +7,12 @@ from typing import Generator
 from beyond_vibes.model_config import ModelConfig
 from beyond_vibes.simulations.mlflow import MlflowTracer
 from beyond_vibes.simulations.models import SimulationConfig
-from beyond_vibes.simulations.pi_dev import PiDevClient, PiDevTimeoutError, TurnData
+from beyond_vibes.simulations.pi_dev import (
+    PiDevClient,
+    PiDevError,
+    PiDevTimeoutError,
+    TurnData,
+)
 from beyond_vibes.simulations.sandbox import SandboxManager
 
 logger = logging.getLogger(__name__)
@@ -27,6 +32,7 @@ class SimulationOrchestrator:
         self.tracer = tracer
         self.sandbox = sandbox_manager
         self._completion_status: str | None = None
+        self._turns: list[TurnData] = []
 
     @property
     def completion_status(self: "SimulationOrchestrator") -> str | None:
@@ -43,6 +49,7 @@ class SimulationOrchestrator:
         system_prompt: str | None = None,
     ) -> Generator[TurnData, None, None]:
         """Run simulation and yield turns as they arrive from pi.dev."""
+        self._turns = []
         with self.sandbox.sandbox(url=repo_url, branch=branch) as working_dir:
             if working_dir is None:
                 raise RuntimeError("Failed to create sandbox")
@@ -56,6 +63,7 @@ class SimulationOrchestrator:
                     max_turns=max_turns,
                     system_prompt=system_prompt,
                 ):
+                    self._turns.append(turn)
                     logger.debug(
                         "Yielding turn %d (stop_reason=%s)",
                         turn.turn_index,
@@ -66,7 +74,7 @@ class SimulationOrchestrator:
                 logger.debug(
                     "pi.run() generator exhausted: max_turns_reached=%s turns=%d",
                     self.pi.max_turns_reached,
-                    len(self.pi._turns),
+                    len(self._turns),
                 )
                 if self.pi.max_turns_reached:
                     logger.warning("Max turns (%d) reached for simulation", max_turns)
@@ -94,7 +102,7 @@ class SimulationOrchestrator:
 
     def check_turn_errors(self: "SimulationOrchestrator") -> str | None:
         """Return error message if any turn had stop_reason == 'error'."""
-        for turn in self.pi._turns or []:
+        for turn in self._turns:
             if turn.stop_reason == "error" and turn.error_message:
                 return turn.error_message
         return None
@@ -133,14 +141,18 @@ def run_simulation(  # noqa: PLR0913
                 tracer.log_error(msg)
                 raise RuntimeError(msg)
 
-        except Exception:
+        except PiDevError as exc:
             # Log error + stderr BEFORE re-raising so MLflow flushes them
             exc_str = traceback.format_exc()
             logger.error("Simulation failed:\n%s", exc_str)
             tracer.log_error(exc_str)
-            stderr = getattr(pi_client, "_last_stderr", None)
-            if stderr:
-                tracer.log_stderr(stderr)
+            if exc.stderr:
+                tracer.log_stderr(exc.stderr)
+            raise
+        except Exception:
+            exc_str = traceback.format_exc()
+            logger.error("Simulation failed:\n%s", exc_str)
+            tracer.log_error(exc_str)
             raise
 
         # Detect failures even when pi exits 0 (e.g. API errors)

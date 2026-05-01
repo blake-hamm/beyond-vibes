@@ -1,7 +1,6 @@
 """Tests for pi.dev client."""
 
 import json
-import signal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,8 +10,6 @@ from beyond_vibes.simulations.pi_dev import (
     PiDevClient,
     PiDevError,
     TurnData,
-    TurnTimestamps,
-    compute_latency_metrics,
 )
 
 
@@ -33,7 +30,7 @@ class TestPiDevClientInit:
         assert client.model == "kimi-for-coding"
         expected_timeout = 2400.0
         assert client.timeout == expected_timeout
-        assert client.stderr_log.name.endswith("_pi_stderr.log")
+        assert client.stderr_log is None
 
     def test_init_custom(self) -> None:
         """Test initialization with custom values."""
@@ -48,29 +45,6 @@ class TestPiDevClientInit:
         expected_timeout = 60.0
         assert client.timeout == expected_timeout
         assert client.stderr_log == Path("/tmp/pi_err.log")
-
-
-class TestPiDevClientContextManager:
-    """Tests for context manager."""
-
-    def test_context_manager(self) -> None:
-        """Test context manager calls abort on exit."""
-        client = PiDevClient()
-        client.abort = MagicMock()
-        with client as ctx:
-            assert ctx is client
-        client.abort.assert_called_once()
-
-    def test_context_manager_with_exception(
-        self,
-    ) -> None:
-        """Test context manager aborts even on exception."""
-        client = PiDevClient()
-        client.abort = MagicMock()
-        with pytest.raises(ValueError, match="test error"):
-            with client:
-                raise ValueError("test error")
-        client.abort.assert_called_once()
 
 
 class TestPiDevClientRun:
@@ -104,6 +78,7 @@ class TestPiDevClientRun:
         assert turn.content[0]["type"] == "thinking"
         assert turn.content[1]["type"] == "text"
         assert turn.content[1]["text"] == "Hello"
+        assert turn.response_id == "msg_OTKGtprx2JutpeeRM9Snknvs"
 
     def test_run_command_construction(self) -> None:
         """Test that pi command is constructed correctly."""
@@ -220,7 +195,6 @@ class TestPiDevClientRun:
         assert len(turns) == 1
         assert turns[0].stop_reason == "error"
         assert turns[0].error_message == "401 Incorrect API key"
-        assert client._turns == turns
 
     def test_run_max_turns(self, fixture_lines: list[str]) -> None:
         """Test max_turns stops after N assistant turns."""
@@ -235,28 +209,18 @@ class TestPiDevClientRun:
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
-                with patch.object(client, "_kill") as mock_kill:
-                    turns = list(client.run("Say hello", max_turns=1))
+                with patch.object(client, "_max_turns_reached", False):
+                    with patch("os.killpg") as mock_killpg:
+                        turns = list(client.run("Say hello", max_turns=1))
 
         assert len(turns) == 1
-        mock_kill.assert_called_once()
+        mock_killpg.assert_called()
 
-    def test_run_invalid_json_skipped(self) -> None:
-        """Test that invalid JSON lines are skipped with a warning."""
+    def test_run_invalid_json_raises(self) -> None:
+        """Test that invalid JSON lines raise PiDevError."""
         client = PiDevClient()
         lines = [
             "not json",
-            json.dumps(
-                {
-                    "type": "message_end",
-                    "message": {
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": "Hi"}],
-                        "usage": {"input": 10, "output": 5, "totalTokens": 15},
-                        "stopReason": "stop",
-                    },
-                }
-            ),
         ]
 
         mock_proc = MagicMock()
@@ -266,55 +230,8 @@ class TestPiDevClientRun:
 
         with patch("subprocess.Popen", return_value=mock_proc):
             with patch("os.getpgid", return_value=1234):
-                with patch("beyond_vibes.simulations.pi_dev.logger") as mock_logger:
-                    turns = list(client.run("Test"))
-
-        assert len(turns) == 1
-        mock_logger.warning.assert_called_once()
-
-
-class TestPiDevClientAbort:
-    """Tests for abort method."""
-
-    def test_abort_no_process(self) -> None:
-        """Test abort when no process is running."""
-        client = PiDevClient()
-        client.abort()  # Should not raise
-
-    def test_abort_kills_process(self) -> None:
-        """Test abort kills the process group."""
-        client = PiDevClient()
-        mock_proc = MagicMock()
-        mock_proc.pid = 1234
-        mock_proc.poll.return_value = None
-        client._proc = mock_proc
-
-        with patch("os.getpgid", return_value=1234):
-            with patch("os.killpg") as mock_killpg:
-                client.abort()
-
-        mock_killpg.assert_called_once_with(1234, signal.SIGKILL)
-
-
-class TestPiDevClientTimeout:
-    """Tests for timeout behavior."""
-
-    def test_timeout_triggers_kill(self) -> None:
-        """Test that timeout triggers process kill."""
-        client = PiDevClient(timeout=0.01)
-        mock_proc = MagicMock()
-        mock_proc.stdout = iter([])
-        mock_proc.pid = 1234
-        mock_proc.poll.return_value = None
-
-        with patch("subprocess.Popen", return_value=mock_proc):
-            with patch("os.getpgid", return_value=1234):
-                with patch("os.killpg") as mock_killpg:
-                    with pytest.raises(PiDevError):
-                        list(client.run("Test"))
-
-        # Timer should have fired and killed the process
-        mock_killpg.assert_called()
+                with pytest.raises(PiDevError, match="Invalid JSON line"):
+                    list(client.run("Test"))
 
 
 @pytest.fixture
@@ -410,74 +327,6 @@ class TestPiDevClientToolRun:
         assert len(turns[0].tool_results) == 1
 
 
-class TestTurnTimestamps:
-    """Tests for TurnTimestamps dataclass."""
-
-    def test_defaults(self) -> None:
-        """Test TurnTimestamps default values."""
-        ts = TurnTimestamps()
-        assert ts.user_message_end is None
-        assert ts.assistant_message_start is None
-        assert ts.assistant_message_end is None
-        assert ts.first_update is None
-
-
-class TestComputeLatencyMetrics:
-    """Tests for compute_latency_metrics helper."""
-
-    def test_full_metrics(self) -> None:
-        """Test all metrics computed correctly."""
-        turn = TurnData(turn_index=0)
-        turn.timestamps = TurnTimestamps(
-            user_message_end=0.0,
-            assistant_message_start=1.0,
-            assistant_message_end=3.0,
-        )
-        turn.usage = {"input": 100, "output": 50}
-        compute_latency_metrics(turn)
-        assert turn.prompt_processing_time_seconds == 1.0  # noqa: PLR2004
-        assert turn.time_to_first_token_seconds == 1.0  # noqa: PLR2004
-        assert turn.generation_time_seconds == 2.0  # noqa: PLR2004
-        assert turn.end_to_end_turn_time_seconds == 3.0  # noqa: PLR2004
-        assert turn.prompt_tokens_per_second == 100.0  # noqa: PLR2004
-        assert turn.generation_tokens_per_second == 25.0  # noqa: PLR2004
-
-    def test_no_timestamps(self) -> None:
-        """Test nothing computed when timestamps missing."""
-        turn = TurnData(turn_index=0)
-        compute_latency_metrics(turn)
-        assert turn.prompt_processing_time_seconds is None
-        assert turn.time_to_first_token_seconds is None
-        assert turn.generation_time_seconds is None
-
-    def test_zero_tokens(self) -> None:
-        """Test TPS is None when token counts are zero."""
-        turn = TurnData(turn_index=0)
-        turn.timestamps = TurnTimestamps(
-            user_message_end=0.0,
-            assistant_message_start=1.0,
-            assistant_message_end=2.0,
-        )
-        turn.usage = {"input": 0, "output": 0}
-        compute_latency_metrics(turn)
-        assert turn.prompt_tokens_per_second is None
-        assert turn.generation_tokens_per_second is None
-
-    def test_partial_timestamps(self) -> None:
-        """Test partial timestamps compute available metrics only."""
-        turn = TurnData(turn_index=0)
-        turn.timestamps = TurnTimestamps(
-            assistant_message_end=2.0,
-            assistant_message_start=1.0,
-        )
-        turn.usage = {"input": 10, "output": 20}
-        compute_latency_metrics(turn)
-        assert turn.prompt_processing_time_seconds is None
-        assert turn.generation_time_seconds == 1.0  # noqa: PLR2004
-        assert turn.generation_tokens_per_second == 20.0  # noqa: PLR2004
-        assert turn.prompt_tokens_per_second is None
-
-
 class TestPiDevClientLatency:
     """Tests for latency capture in _read_turns."""
 
@@ -495,28 +344,11 @@ class TestPiDevClientLatency:
 
         assert len(turns) == 1
         turn = turns[0]
-        assert turn.timestamps is not None
-        assert turn.timestamps.user_message_end is not None
-        assert turn.timestamps.assistant_message_end is not None
+        assert turn.user_message_end is not None
+        assert turn.assistant_message_end is not None
         assert turn.prompt_processing_time_seconds is not None
         assert turn.generation_time_seconds is not None
         assert turn.time_to_first_token_seconds is not None
-
-    def test_run_captures_first_update(self, fixture_lines: list[str]) -> None:
-        """Test that first message_update timestamp is captured."""
-        client = PiDevClient()
-        mock_proc = MagicMock()
-        mock_proc.stdout = iter(fixture_lines)
-        mock_proc.pid = 1234
-        mock_proc.poll.return_value = None
-
-        with patch("subprocess.Popen", return_value=mock_proc):
-            with patch("os.getpgid", return_value=1234):
-                turns = list(client.run("Say hello"))
-
-        turn = turns[0]
-        assert turn.timestamps is not None
-        assert turn.timestamps.first_update is not None
 
 
 class TestTurnData:
@@ -531,12 +363,27 @@ class TestTurnData:
         assert turn.stop_reason is None
         assert turn.tool_calls == []
         assert turn.tool_results == []
-        assert turn.raw_message is None
-        assert turn.timestamps is None
+        assert turn.response_id is None
         assert turn.error_message is None
+        assert turn.user_message_end is None
+        assert turn.assistant_message_start is None
+        assert turn.assistant_message_end is None
         assert turn.prompt_processing_time_seconds is None
         assert turn.time_to_first_token_seconds is None
         assert turn.generation_time_seconds is None
-        assert turn.end_to_end_turn_time_seconds is None
         assert turn.prompt_tokens_per_second is None
         assert turn.generation_tokens_per_second is None
+
+
+class TestPiDevError:
+    """Tests for PiDevError exception."""
+
+    def test_error_with_stderr(self) -> None:
+        """Test PiDevError carries stderr."""
+        exc = PiDevError("boom", stderr="some stderr")
+        assert exc.stderr == "some stderr"
+
+    def test_error_without_stderr(self) -> None:
+        """Test PiDevError without stderr."""
+        exc = PiDevError("boom")
+        assert exc.stderr is None

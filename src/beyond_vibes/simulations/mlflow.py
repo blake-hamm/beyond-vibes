@@ -1,6 +1,5 @@
 """MLflow tracing integration for simulation runs."""
 
-import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -173,11 +172,8 @@ class MlflowTracer:
             "attributes": {"run_id": self.run_id},
             "metadata": {"mlflow.trace.session": self.session.session_id},
         }
-        if (
-            turn.timestamps is not None
-            and turn.timestamps.assistant_message_start_ns is not None
-        ):
-            span_kwargs["start_time_ns"] = turn.timestamps.assistant_message_start_ns
+        if turn.assistant_message_start_ns is not None:
+            span_kwargs["start_time_ns"] = turn.assistant_message_start_ns
 
         parent_span = mlflow.start_span_no_context(**span_kwargs)
         self._active_span = parent_span
@@ -218,9 +214,7 @@ class MlflowTracer:
                 "providerID": self.session.llm_config.provider,
                 "cost": cost,
                 "stop_reason": turn.stop_reason or "",
-                "response_id": turn.raw_message.get("responseId", "")
-                if turn.raw_message
-                else "",
+                "response_id": turn.response_id or "",
             }
         )
 
@@ -230,17 +224,6 @@ class MlflowTracer:
         for call in turn.tool_calls:
             result = results_by_id.get(call.get("toolCallId", ""), {})
             self._create_tool_span(parent_span, call, result)
-
-        if turn.raw_message:
-            try:
-                raw_json = json.dumps(turn.raw_message)
-            except TypeError:
-                raw_json = "[unserializable]"
-        else:
-            raw_json = ""
-        if len(raw_json) > MAX_RAW_JSON_LEN:
-            raw_json = raw_json[:MAX_RAW_JSON_LEN] + "... [truncated]"
-        parent_span.set_attributes({"raw_message_json": raw_json})
 
         perf_attrs = {
             f"perf.{k}": v

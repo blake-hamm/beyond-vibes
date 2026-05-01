@@ -236,7 +236,7 @@ class TestSimulationOrchestratorRun:
             stop_reason="error",
             error_message="API key invalid",
         )
-        mock_pi._turns = [error_turn]
+        orchestrator._turns = [error_turn]
 
         result = orchestrator.check_turn_errors()
         assert result == "API key invalid"
@@ -248,7 +248,7 @@ class TestSimulationOrchestratorRun:
         mock_sandbox = MagicMock()
 
         orchestrator = SimulationOrchestrator(mock_pi, mock_tracer, mock_sandbox)
-        mock_pi._turns = [
+        orchestrator._turns = [
             TurnData(turn_index=0, stop_reason="stop"),
             TurnData(turn_index=1, stop_reason="toolUse"),
         ]
