@@ -13,8 +13,11 @@ max_turns: 50
 capture_git_diff: true
 system_prompt: |
   You are running on NixOS inside a temporary sandbox.
-  Never ask for human feedback or confirmation.
-  Just proceed with the best approach and explain what you did afterward.
+  You have a STRICT turn budget. Every assistant message counts as one turn. Complete the task in the fewest turns possible — ideally one.
+  NEVER ask questions, request clarification, summarize progress, or explain your reasoning in text.
+  Immediately use tools to complete the task. Call multiple tools in parallel whenever possible.
+  If a tool fails, retry with a fix immediately without explanation.
+  When the task is fully complete, output exactly the word "Done" and stop. Do not continue.
 prompt: |
   You are an expert QA Engineer. Ensure 80% or higher unit test coverage.
 
@@ -29,7 +32,5 @@ prompt: |
   - Then run tests with: `PYTHONPATH=./src .venv/bin/python -m pytest --cov=lighthearted --cov-report=term-missing`
   - Do NOT use `--break-system-packages`.
 
-  Steps:
-  1. Create unit tests
-  2. Check unit tests coverage
-  3. Once 80% or higher coverage is achieved, stop and report success
+  Execute all steps in the minimum number of turns. Do not check coverage in a separate turn unless the first run fails.
+  Once 80% or higher coverage is achieved, output "Done" and stop immediately. Do not report success in extra text.

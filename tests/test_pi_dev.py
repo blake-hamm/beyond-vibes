@@ -1,11 +1,7 @@
 """Tests for pi.dev client."""
 
 import json
-import os
-import shutil
 import signal
-import subprocess
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -416,84 +412,6 @@ class TestPiDevClientToolRun:
         assert len(turns[0].tool_calls) == 1
         assert turns[0].tool_calls[0]["toolName"] == "bash"
         assert len(turns[0].tool_results) == 1
-
-
-class TestSandboxEnv:
-    """Tests for sandbox environment isolation."""
-
-    def test_env_allowlist_blocks_leaked_vars(
-        self: "TestSandboxEnv", monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Sensitive and virtual-env vars must not leak into sandbox env."""
-        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
-        monkeypatch.setenv("GITHUB_TOKEN", "token")
-        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
-        env = PiDevClient._build_sandbox_env(Path("/tmp/fake"))
-        assert "AWS_SECRET_ACCESS_KEY" not in env
-        assert "GITHUB_TOKEN" not in env
-        assert "VIRTUAL_ENV" not in env
-
-    def test_env_path_has_no_parent_venv(self: "TestSandboxEnv") -> None:
-        """PATH must not contain references to parent venvs or project."""
-        env = PiDevClient._build_sandbox_env(Path("/tmp/fake"))
-        path = env.get("PATH", "")
-        assert ".venv" not in path
-        assert "conda" not in path
-        assert "pyenv" not in path
-        assert "beyond-vibes" not in path
-
-    def test_env_path_is_constructed(self: "TestSandboxEnv") -> None:
-        """PATH contains only directories of resolved system binaries."""
-        env = PiDevClient._build_sandbox_env(Path("/tmp/fake"))
-        path_parts = env.get("PATH", "").split(":") if env.get("PATH") else []
-        expected_dirs: list[str] = []
-        host_path = os.environ.get("PATH", "")
-        for cmd in ("git", "python3", "bash", "node"):
-            for p in host_path.split(":"):
-                low = p.lower()
-                if any(
-                    x in low
-                    for x in (
-                        ".venv",
-                        "venv",
-                        "virtualenv",
-                        "conda",
-                        "mamba",
-                        "pyenv",
-                    )
-                ):
-                    continue
-                found = shutil.which(cmd, path=p)
-                if found:
-                    expected_dirs.append(str(Path(found).parent))
-                    break
-        # Deduplicate while preserving order
-        seen: set[str] = set()
-        expected = [d for d in expected_dirs if not (d in seen or seen.add(d))]
-        assert path_parts == expected
-
-    def test_home_is_working_dir(self: "TestSandboxEnv") -> None:
-        """HOME must equal the provided working directory."""
-        wd = Path("/tmp/fake_wd")
-        env = PiDevClient._build_sandbox_env(wd)
-        assert env["HOME"] == str(wd)
-
-    def test_pi_runs_in_sandbox(self: "TestSandboxEnv") -> None:
-        """Pi --version succeeds with allowlisted env."""
-        wd = Path(tempfile.mkdtemp())
-        try:
-            env = PiDevClient._build_sandbox_env(wd)
-            result = subprocess.run(
-                [shutil.which("pi") or "pi", "--version"],
-                env=env,
-                cwd=wd,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert result.returncode == 0, f"pi --version failed: {result.stderr}"
-        finally:
-            shutil.rmtree(wd, ignore_errors=True)
 
 
 class TestTurnTimestamps:

@@ -1,8 +1,8 @@
 bucket: beyond-vibes
 models:
-  - name: k2p6
+  - name: kimi-for-coding
     provider: kimi-coding
-    model_id: k2p6
+    model_id: kimi-for-coding
   - name: nemotron
     provider: opencode
     model_id: nemotron-3-super-free

@@ -8,7 +8,10 @@ max_turns: 2
 capture_git_diff: true
 system_prompt: |
   You are running on NixOS inside a temporary sandbox.
-  Never ask for human feedback or confirmation.
-  Just proceed with the best approach and explain what you did afterward.
+  You have a STRICT turn budget. Every assistant message counts as one turn. Complete the task in the fewest turns possible — ideally one.
+  NEVER ask questions, request clarification, summarize progress, or explain your reasoning in text.
+  Immediately use tools to complete the task. Call multiple tools in parallel whenever possible.
+  If a tool fails, retry with a fix immediately without explanation.
+  When the task is fully complete, output exactly the word "Done" and stop. Do not continue.
 prompt: |
-  Say hello and then stop.
+  Say hello in a single assistant message and then stop. Do not send additional messages.

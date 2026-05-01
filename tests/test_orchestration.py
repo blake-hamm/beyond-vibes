@@ -280,6 +280,7 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter([])
+            mock_orchestrator.completion_status = "completed"
             mock_orchestrator.check_turn_errors.return_value = None
 
             run_simulation(
@@ -321,6 +322,7 @@ class TestRunSimulation:
             mock_orchestrator = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator
             mock_orchestrator.run.return_value = iter(test_turns)
+            mock_orchestrator.completion_status = "completed"
             mock_orchestrator.check_turn_errors.return_value = None
 
             run_simulation(
@@ -334,6 +336,45 @@ class TestRunSimulation:
 
         expected_logged_turns = 2
         assert mock_tracer.log_turn.call_count == expected_logged_turns
+
+    def test_run_simulation_max_turns(
+        self: "TestRunSimulation",
+        mock_simulation_config: SimulationConfig,
+        mock_model_config: ModelConfig,
+    ) -> None:
+        """Test max_turns raises RuntimeError so MLflow marks run FAILED."""
+        mock_sandbox = MagicMock()
+        mock_pi = MagicMock()
+        mock_tracer = MagicMock()
+        mock_tracer.session = MagicMock()
+
+        mock_tracer.log_simulation.return_value.__enter__ = MagicMock(
+            return_value=mock_tracer
+        )
+        mock_tracer.log_simulation.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch(
+            "beyond_vibes.simulations.orchestration.SimulationOrchestrator"
+        ) as mock_orchestrator_class:
+            mock_orchestrator = MagicMock()
+            mock_orchestrator_class.return_value = mock_orchestrator
+            mock_orchestrator.run.return_value = iter([])
+            mock_orchestrator.completion_status = "max_turns"
+            mock_orchestrator.check_turn_errors.return_value = None
+
+            with pytest.raises(RuntimeError, match="Max turns"):
+                run_simulation(
+                    sim_config=mock_simulation_config,
+                    model_config=mock_model_config,
+                    sandbox=mock_sandbox,
+                    pi_client=mock_pi,
+                    tracer=mock_tracer,
+                    prompt="Test prompt",
+                )
+
+        expected_log_error_calls = 2
+        assert mock_tracer.log_error.call_count == expected_log_error_calls
+        assert "Max turns" in mock_tracer.log_error.call_args_list[0][0][0]
 
     def test_run_simulation_error(
         self: "TestRunSimulation",

@@ -127,6 +127,12 @@ def run_simulation(  # noqa: PLR0913
             if orchestrator.completion_status:
                 tracer.set_completion_status(orchestrator.completion_status)
 
+            if orchestrator.completion_status == "max_turns":
+                msg = f"Max turns ({sim_config.max_turns}) reached"
+                logger.error(msg)
+                tracer.log_error(msg)
+                raise RuntimeError(msg)
+
         except Exception:
             # Log error + stderr BEFORE re-raising so MLflow flushes them
             exc_str = traceback.format_exc()
