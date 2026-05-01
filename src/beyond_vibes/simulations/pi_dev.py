@@ -60,12 +60,15 @@ class TurnData:
     error_message: str | None = None
 
     # Derived latency metrics (computed before yield)
-    prompt_processing_s: float | None = None
-    ttft_s: float | None = None
-    generation_time_s: float | None = None
-    e2e_turn_s: float | None = None
-    prompt_tps: float | None = None
-    generation_tps: float | None = None
+    prompt_processing_time_seconds: float | None = None
+    time_to_first_token_seconds: float | None = None
+    generation_time_seconds: float | None = None
+    end_to_end_turn_time_seconds: float | None = None
+    prompt_tokens_per_second: float | None = None
+    generation_tokens_per_second: float | None = None
+
+    # Simulation-level error for this turn (set by MlflowTracer.log_error)
+    simulation_error: str | None = None
 
 
 def compute_latency_metrics(turn: TurnData) -> None:
@@ -82,27 +85,35 @@ def compute_latency_metrics(turn: TurnData) -> None:
     output_tokens = usage.get("output", 0)
 
     if ts.assistant_message_start is not None and ts.user_message_end is not None:
-        turn.prompt_processing_s = ts.assistant_message_start - ts.user_message_end
-        turn.ttft_s = turn.prompt_processing_s
+        turn.prompt_processing_time_seconds = (
+            ts.assistant_message_start - ts.user_message_end
+        )
+        turn.time_to_first_token_seconds = turn.prompt_processing_time_seconds
 
     if ts.assistant_message_end is not None and ts.assistant_message_start is not None:
-        turn.generation_time_s = ts.assistant_message_end - ts.assistant_message_start
+        turn.generation_time_seconds = (
+            ts.assistant_message_end - ts.assistant_message_start
+        )
 
     if ts.assistant_message_end is not None and ts.user_message_end is not None:
-        turn.e2e_turn_s = ts.assistant_message_end - ts.user_message_end
+        turn.end_to_end_turn_time_seconds = (
+            ts.assistant_message_end - ts.user_message_end
+        )
 
-    if turn.prompt_processing_s is not None and input_tokens > 0:
-        turn.prompt_tps = input_tokens / turn.prompt_processing_s
+    if turn.prompt_processing_time_seconds is not None and input_tokens > 0:
+        turn.prompt_tokens_per_second = (
+            input_tokens / turn.prompt_processing_time_seconds
+        )
 
-    if turn.generation_time_s is not None and output_tokens > 0:
-        turn.generation_tps = output_tokens / turn.generation_time_s
+    if turn.generation_time_seconds is not None and output_tokens > 0:
+        turn.generation_tokens_per_second = output_tokens / turn.generation_time_seconds
 
 
 class PiDevClient:
     """Wrapper around pi.dev CLI for simulation runs."""
 
     def __init__(
-        self: "PiDevClient",
+        self,
         provider: str = "kimi-coding",
         model: str = "kimi-for-coding",
         timeout: float = 2400.0,
@@ -126,12 +137,12 @@ class PiDevClient:
         self._turns: list[TurnData] = []
 
     @property
-    def max_turns_reached(self: "PiDevClient") -> bool:
+    def max_turns_reached(self) -> bool:
         """Return True if the last run stopped due to max_turns."""
         return self._max_turns_reached
 
     def run(  # noqa: PLR0912,PLR0915
-        self: "PiDevClient",
+        self,
         prompt: str,
         working_dir: Path | None = None,
         max_turns: int = 75,
@@ -209,15 +220,15 @@ class PiDevClient:
             except Exception:
                 pass
 
-    def abort(self: "PiDevClient") -> None:
+    def abort(self) -> None:
         """Abort the running pi process."""
         self._kill()
 
-    def _timeout(self: "PiDevClient") -> None:
+    def _timeout(self) -> None:
         self._timed_out = True
         self._kill()
 
-    def _kill(self: "PiDevClient") -> None:
+    def _kill(self) -> None:
         self._terminated_by_us = True
         if self._proc:
             try:
@@ -225,7 +236,7 @@ class PiDevClient:
             except ProcessLookupError:
                 pass
 
-    def _read_stderr(self: "PiDevClient") -> str:
+    def _read_stderr(self) -> str:
         if not self.stderr_log.exists():
             return ""
         try:
@@ -234,7 +245,7 @@ class PiDevClient:
             return ""
 
     def _read_turns(  # noqa: PLR0912,PLR0915
-        self: "PiDevClient", max_turns: int
+        self, max_turns: int
     ) -> Iterator[TurnData]:
         if not self._proc or not self._proc.stdout:
             raise PiDevError("Process not started")
@@ -425,12 +436,12 @@ class PiDevClient:
 
         logger.info("pi stream ended after %d turns", assistant_count)
 
-    def __enter__(self: "PiDevClient") -> Self:
+    def __enter__(self) -> Self:
         """Enter context manager."""
         return self
 
     def __exit__(
-        self: "PiDevClient",
+        self,
         exc_type: object,
         exc_val: object,
         exc_tb: object,

@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 import mlflow
 from mlflow.entities.span import LiveSpan, SpanType
@@ -22,7 +22,7 @@ MAX_RAW_JSON_LEN = 4096
 
 def generate_session_id(model_config: ModelConfig, quant_tag: str | None = None) -> str:
     """Generate a unique session ID from model config and timestamp."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     quant = quant_tag or "fp16"
     return f"{model_config.name}_{quant}_{timestamp}"
 
@@ -36,10 +36,10 @@ class SimulationSession(BaseModel):
     llm_config: ModelConfig
     quant_tag: str | None = None
     session_id: str = ""
-    started_at: datetime = Field(default_factory=datetime.now)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     total_messages: int = 0
-    total_time_seconds: float | None = None
+    total_model_compute_time_seconds: float | None = None
     turns: list[TurnData] = Field(default_factory=list)
     git_diff: str | None = None
     system_prompt: str | None = None
@@ -60,11 +60,11 @@ class SimulationSession(BaseModel):
     tool_error_rate: float | None = None
     token_efficiency: float | None = None
     cost_efficiency: float | None = None
-    avg_ttft_s: float | None = None
-    avg_prompt_tps: float | None = None
-    avg_generation_tps: float | None = None
-    total_generation_time_s: float | None = None
-    total_prompt_processing_s: float | None = None
+    avg_time_to_first_token_seconds: float | None = None
+    avg_prompt_tokens_per_second: float | None = None
+    avg_generation_tokens_per_second: float | None = None
+    total_generation_time_seconds: float | None = None
+    total_prompt_processing_time_seconds: float | None = None
 
 
 class MlflowTracer:
@@ -101,7 +101,7 @@ class MlflowTracer:
             llm_config=model_config,
             quant_tag=self.quant_tag,
             session_id=session_id,
-            started_at=datetime.now(),
+            started_at=datetime.now(timezone.utc),
         )
 
         mlflow.set_experiment(self.experiment_name)
@@ -245,10 +245,10 @@ class MlflowTracer:
         perf_attrs = {
             f"perf.{k}": v
             for k, v in {
-                "ttft_s": turn.ttft_s,
-                "prompt_tps": turn.prompt_tps,
-                "generation_tps": turn.generation_tps,
-                "generation_time_s": turn.generation_time_s,
+                "time_to_first_token_seconds": turn.time_to_first_token_seconds,
+                "prompt_tokens_per_second": turn.prompt_tokens_per_second,
+                "generation_tokens_per_second": turn.generation_tokens_per_second,
+                "generation_time_seconds": turn.generation_time_seconds,
                 "has_tool_calls": bool(turn.tool_calls),
             }.items()
             if v is not None
@@ -349,6 +349,8 @@ class MlflowTracer:
             return
 
         self.session.error = error_message
+        if self.session.turns:
+            self.session.turns[-1].simulation_error = error_message
         if self._active_span is not None:
             self._active_span.set_status("ERROR")
             self._active_span.add_event(
@@ -392,34 +394,52 @@ class MlflowTracer:
         def _mean(values: list[float]) -> float | None:
             return sum(values) / len(values) if values else None
 
-        self.session.avg_ttft_s = _mean(
-            [t.ttft_s for t in turns if t.ttft_s is not None]
+        self.session.avg_time_to_first_token_seconds = _mean(
+            [
+                t.time_to_first_token_seconds
+                for t in turns
+                if t.time_to_first_token_seconds is not None
+            ]
         )
-        self.session.avg_prompt_tps = _mean(
-            [t.prompt_tps for t in turns if t.prompt_tps is not None]
+        self.session.avg_prompt_tokens_per_second = _mean(
+            [
+                t.prompt_tokens_per_second
+                for t in turns
+                if t.prompt_tokens_per_second is not None
+            ]
         )
-        self.session.avg_generation_tps = _mean(
-            [t.generation_tps for t in turns if t.generation_tps is not None]
+        self.session.avg_generation_tokens_per_second = _mean(
+            [
+                t.generation_tokens_per_second
+                for t in turns
+                if t.generation_tokens_per_second is not None
+            ]
         )
         gen_times = [
-            t.generation_time_s for t in turns if t.generation_time_s is not None
+            t.generation_time_seconds
+            for t in turns
+            if t.generation_time_seconds is not None
         ]
-        self.session.total_generation_time_s = sum(gen_times) if gen_times else None
+        self.session.total_generation_time_seconds = (
+            sum(gen_times) if gen_times else None
+        )
         prompt_times = [
-            t.prompt_processing_s for t in turns if t.prompt_processing_s is not None
+            t.prompt_processing_time_seconds
+            for t in turns
+            if t.prompt_processing_time_seconds is not None
         ]
-        self.session.total_prompt_processing_s = (
+        self.session.total_prompt_processing_time_seconds = (
             sum(prompt_times) if prompt_times else None
         )
 
         # Total inference time = prompt processing + generation (actual model compute)
         if (
-            self.session.total_prompt_processing_s is not None
-            and self.session.total_generation_time_s is not None
+            self.session.total_prompt_processing_time_seconds is not None
+            and self.session.total_generation_time_seconds is not None
         ):
-            self.session.total_time_seconds = (
-                self.session.total_prompt_processing_s
-                + self.session.total_generation_time_s
+            self.session.total_model_compute_time_seconds = (
+                self.session.total_prompt_processing_time_seconds
+                + self.session.total_generation_time_seconds
             )
 
     def _log_tool_metrics(self) -> int:
@@ -435,18 +455,36 @@ class MlflowTracer:
     def _log_performance_metrics(self) -> None:
         """Log computed performance metrics to MLflow."""
         metrics = [
-            ("avg_ttft_s", self.session.avg_ttft_s),
-            ("avg_prompt_tps", self.session.avg_prompt_tps),
-            ("avg_generation_tps", self.session.avg_generation_tps),
-            ("total_generation_time_s", self.session.total_generation_time_s),
-            ("total_prompt_processing_s", self.session.total_prompt_processing_s),
-            ("total_time_seconds", self.session.total_time_seconds),
+            (
+                "avg_time_to_first_token_seconds",
+                self.session.avg_time_to_first_token_seconds,
+            ),
+            (
+                "avg_prompt_tokens_per_second",
+                self.session.avg_prompt_tokens_per_second,
+            ),
+            (
+                "avg_generation_tokens_per_second",
+                self.session.avg_generation_tokens_per_second,
+            ),
+            (
+                "total_generation_time_seconds",
+                self.session.total_generation_time_seconds,
+            ),
+            (
+                "total_prompt_processing_time_seconds",
+                self.session.total_prompt_processing_time_seconds,
+            ),
+            (
+                "total_model_compute_time_seconds",
+                self.session.total_model_compute_time_seconds,
+            ),
         ]
         for name, value in metrics:
             if value is not None:
                 mlflow.log_metric(name, value)
 
-    def _log_derived_metrics(self, total_tool_calls: int) -> None:
+    def _log_derived_metrics(self, total_tool_calls: int, total_messages: int) -> None:
         """Compute and log derived session metrics."""
         self.session.tool_total_calls = total_tool_calls
         self.session.tool_loop_detected = (
@@ -455,7 +493,7 @@ class MlflowTracer:
         self.session.tool_error_rate = self.session.tool_error_count / max(
             total_tool_calls, 1
         )
-        total_messages = max(self.session.total_messages, 1)
+        total_messages = max(total_messages, 1)
         self.session.token_efficiency = self.session.total_tokens / total_messages
         self.session.cost_efficiency = self.session.total_cost / total_messages
 
@@ -497,7 +535,7 @@ class MlflowTracer:
                 mlflow.log_metric("has_error", 1)
 
             total_tool_calls = self._log_tool_metrics()
-            self._log_derived_metrics(total_tool_calls)
+            self._log_derived_metrics(total_tool_calls, self.session.total_messages)
 
             trace_session = self.session.model_dump(mode="json")
             mlflow.log_dict(trace_session, "trace_session.json")

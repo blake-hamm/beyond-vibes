@@ -78,7 +78,7 @@ class TestSimulationSession:
         assert isinstance(session.started_at, datetime)
         assert session.completed_at is None
         assert session.total_messages == 0
-        assert session.total_time_seconds is None
+        assert session.total_model_compute_time_seconds is None
         assert session.turns == []
         assert session.git_diff is None
         assert session.error is None
@@ -597,11 +597,11 @@ class TestLogTurn:
         tracer.session.llm_config.provider = "local"
         tracer.run_id = "run-123"
 
-        mock_turn.ttft_s = 100.0
-        mock_turn.generation_time_s = 200.0
-        mock_turn.generation_tps = 50.0
-        mock_turn.prompt_tps = 200.0
-        mock_turn.prompt_processing_s = 50.0
+        mock_turn.time_to_first_token_seconds = 100.0
+        mock_turn.generation_time_seconds = 200.0
+        mock_turn.generation_tokens_per_second = 50.0
+        mock_turn.prompt_tokens_per_second = 200.0
+        mock_turn.prompt_processing_time_seconds = 50.0
         mock_turn.tool_calls = []
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
@@ -612,15 +612,15 @@ class TestLogTurn:
         perf_call = None
         for call in mock_span.set_attributes.call_args_list:
             attrs = call[0][0]
-            if "perf.ttft_s" in attrs:
+            if "perf.time_to_first_token_seconds" in attrs:
                 perf_call = attrs
                 break
 
         assert perf_call is not None
-        assert perf_call["perf.ttft_s"] == 100.0  # noqa: PLR2004
-        assert perf_call["perf.generation_time_s"] == 200.0  # noqa: PLR2004
-        assert perf_call["perf.generation_tps"] == 50.0  # noqa: PLR2004
-        assert perf_call["perf.prompt_tps"] == 200.0  # noqa: PLR2004
+        assert perf_call["perf.time_to_first_token_seconds"] == 100.0  # noqa: PLR2004
+        assert perf_call["perf.generation_time_seconds"] == 200.0  # noqa: PLR2004
+        assert perf_call["perf.generation_tokens_per_second"] == 50.0  # noqa: PLR2004
+        assert perf_call["perf.prompt_tokens_per_second"] == 200.0  # noqa: PLR2004
         assert perf_call["perf.has_tool_calls"] is False
 
     def test_log_turn_with_tool_calls_sets_has_tool_calls(self) -> None:
@@ -640,8 +640,8 @@ class TestLogTurn:
             tool_calls=[{"toolCallId": "tool_1", "toolName": "bash", "args": {}}],
             tool_results=[],
         )
-        turn.ttft_s = 50.0
-        turn.generation_tps = 10.0
+        turn.time_to_first_token_seconds = 50.0
+        turn.generation_tokens_per_second = 10.0
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             mock_span = MagicMock()
@@ -668,11 +668,11 @@ class TestLogTurn:
         tracer.session.llm_config.provider = "local"
         tracer.run_id = "run-123"
 
-        mock_turn.ttft_s = None
-        mock_turn.generation_time_s = None
-        mock_turn.generation_tps = None
-        mock_turn.prompt_tps = None
-        mock_turn.prompt_processing_s = None
+        mock_turn.time_to_first_token_seconds = None
+        mock_turn.generation_time_seconds = None
+        mock_turn.generation_tokens_per_second = None
+        mock_turn.prompt_tokens_per_second = None
+        mock_turn.prompt_processing_time_seconds = None
         mock_turn.tool_calls = []
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
@@ -1013,7 +1013,7 @@ class TestFlush:
             assert mock_mlflow.log_text.call_count == 2  # noqa: PLR2004
 
     def test_flush_computes_total_time_from_turns(self) -> None:
-        """Test flush computes total_time_seconds from turn latency."""
+        """Test flush computes total_model_compute_time_seconds from turn latency."""
         tracer = MlflowTracer()
         tracer.run_id = "run-123"
 
@@ -1021,17 +1021,17 @@ class TestFlush:
             turn_index=0,
             content=[],
             usage={},
-            prompt_processing_s=0.1,
-            generation_time_s=0.2,
-            e2e_turn_s=0.3,
+            prompt_processing_time_seconds=0.1,
+            generation_time_seconds=0.2,
+            end_to_end_turn_time_seconds=0.3,
         )
         turn2 = TurnData(
             turn_index=1,
             content=[],
             usage={},
-            prompt_processing_s=0.05,
-            generation_time_s=0.1,
-            e2e_turn_s=0.15,
+            prompt_processing_time_seconds=0.05,
+            generation_time_seconds=0.1,
+            end_to_end_turn_time_seconds=0.15,
         )
 
         session = MagicMock()
@@ -1051,13 +1051,13 @@ class TestFlush:
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             tracer._flush()
 
-        # total_time_seconds = 0.1+0.2 + 0.05+0.1 = 0.45
-        assert session.total_time_seconds == pytest.approx(0.45)  # noqa: PLR2004
-        assert session.total_generation_time_s == pytest.approx(0.3)  # noqa: PLR2004
-        assert session.total_prompt_processing_s == pytest.approx(0.15)  # noqa: PLR2004
+        # total_model_compute_time_seconds = 0.1+0.2 + 0.05+0.1 = 0.45
+        assert session.total_model_compute_time_seconds == pytest.approx(0.45)  # noqa: PLR2004
+        assert session.total_generation_time_seconds == pytest.approx(0.3)  # noqa: PLR2004
+        assert session.total_prompt_processing_time_seconds == pytest.approx(0.15)  # noqa: PLR2004
 
         mock_mlflow.log_metric.assert_any_call(
-            "total_time_seconds", pytest.approx(0.45)
+            "total_model_compute_time_seconds", pytest.approx(0.45)
         )
 
     def test_flush_without_latency_metrics(self) -> None:
@@ -1078,22 +1078,22 @@ class TestFlush:
         tracer.session.system_prompt = None
 
         # Prevent MagicMock auto-creation from making these truthy
-        tracer.session.total_prompt_processing_s = None
-        tracer.session.total_generation_time_s = None
-        tracer.session.avg_ttft_s = None
-        tracer.session.avg_prompt_tps = None
-        tracer.session.avg_generation_tps = None
-        tracer.session.total_time_seconds = None
+        tracer.session.total_prompt_processing_time_seconds = None
+        tracer.session.total_generation_time_seconds = None
+        tracer.session.avg_time_to_first_token_seconds = None
+        tracer.session.avg_prompt_tokens_per_second = None
+        tracer.session.avg_generation_tokens_per_second = None
+        tracer.session.total_model_compute_time_seconds = None
 
         with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
             tracer._flush()
 
             for call in mock_mlflow.log_metric.call_args_list:
                 assert call[0][0] not in {
-                    "avg_ttft_s",
-                    "avg_prompt_tps",
-                    "avg_generation_tps",
-                    "total_generation_time_s",
-                    "total_prompt_processing_s",
-                    "total_time_seconds",
+                    "avg_time_to_first_token_seconds",
+                    "avg_prompt_tokens_per_second",
+                    "avg_generation_tokens_per_second",
+                    "total_generation_time_seconds",
+                    "total_prompt_processing_time_seconds",
+                    "total_model_compute_time_seconds",
                 }
