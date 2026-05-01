@@ -159,7 +159,7 @@ def run_simulation(  # noqa: PLR0913
         logger.debug(
             "Post-run check: completion_status=%s turns=%d",
             orchestrator.completion_status,
-            len(pi_client._turns),
+            len(orchestrator._turns),
         )
         turn_error = orchestrator.check_turn_errors()
         if turn_error:

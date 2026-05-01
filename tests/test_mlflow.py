@@ -1,6 +1,6 @@
 """Tests for MLflow tracer."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1037,7 +1037,7 @@ class TestFlush:
         session.total_cost = 0.0
         session.total_input_tokens = 0
         session.total_output_tokens = 0
-        session.total_tokens = 0
+        session.total_tokens = 450
         session.tool_call_counts = {}
         session.tool_error_count = 0
         session.tool_loop_threshold = 3
@@ -1057,6 +1057,55 @@ class TestFlush:
         mock_mlflow.log_metric.assert_any_call(
             "total_model_compute_time_seconds", pytest.approx(0.45)
         )
+        mock_mlflow.log_metric.assert_any_call(
+            "model_compute_tokens_per_second", pytest.approx(1000.0)
+        )
+
+    def test_flush_logs_wall_clock_and_throughput_metrics(self) -> None:
+        """Test flush computes and logs wall-clock time and throughput metrics."""
+        tracer = MlflowTracer()
+        tracer.run_id = "run-123"
+        tracer.session = MagicMock()
+        tracer.session.turns = []
+        tracer.session.total_cost = 0.0
+        tracer.session.total_input_tokens = 0
+        tracer.session.total_output_tokens = 0
+        tracer.session.total_tokens = 300
+        tracer.session.tool_call_counts = {}
+        tracer.session.tool_error_count = 0
+        tracer.session.tool_loop_threshold = 3
+        tracer.session.error = None
+        tracer.session.git_diff = None
+        tracer.session.system_prompt = None
+        tracer.session.total_prompt_processing_time_seconds = None
+        tracer.session.total_generation_time_seconds = None
+        tracer.session.avg_time_to_first_token_seconds = None
+        tracer.session.avg_prompt_tokens_per_second = None
+        tracer.session.avg_generation_tokens_per_second = None
+        tracer.session.total_model_compute_time_seconds = 5.0
+        tracer.session.started_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        with patch("beyond_vibes.simulations.mlflow.mlflow") as mock_mlflow:
+            tracer._flush()
+
+        wall_clock_call = None
+        tps_call = None
+        compute_tps_call = None
+        for call in mock_mlflow.log_metric.call_args_list:
+            name = call[0][0]
+            if name == "total_wall_clock_time_seconds":
+                wall_clock_call = call
+            elif name == "total_tokens_per_second":
+                tps_call = call
+            elif name == "model_compute_tokens_per_second":
+                compute_tps_call = call
+
+        assert wall_clock_call is not None
+        assert wall_clock_call[0][1] > 0
+        assert tps_call is not None
+        assert tps_call[0][1] == pytest.approx(300 / wall_clock_call[0][1])
+        assert compute_tps_call is not None
+        assert compute_tps_call[0][1] == pytest.approx(60.0)  # 300 / 5.0
 
     def test_flush_without_latency_metrics(self) -> None:
         """Test flush does not log perf metrics when none exist."""
@@ -1094,4 +1143,7 @@ class TestFlush:
                     "total_generation_time_seconds",
                     "total_prompt_processing_time_seconds",
                     "total_model_compute_time_seconds",
+                    "total_wall_clock_time_seconds",
+                    "total_tokens_per_second",
+                    "model_compute_tokens_per_second",
                 }

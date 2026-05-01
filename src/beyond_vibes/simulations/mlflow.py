@@ -496,12 +496,37 @@ class MlflowTracer:
             return
 
         try:
-            self.session.completed_at = datetime.now()
+            self.session.completed_at = datetime.now(timezone.utc)
             self.session.total_messages = len(self.session.turns)
 
             mlflow.log_metric("total_messages", self.session.total_messages)
             self._aggregate_performance()
             self._log_performance_metrics()
+
+            if isinstance(self.session.started_at, datetime) and isinstance(
+                self.session.completed_at, datetime
+            ):
+                wall = (
+                    self.session.completed_at - self.session.started_at
+                ).total_seconds()
+                if wall > 0:
+                    mlflow.log_metric("total_wall_clock_time_seconds", wall)
+                    if self.session.total_tokens > 0:
+                        mlflow.log_metric(
+                            "total_tokens_per_second",
+                            self.session.total_tokens / wall,
+                        )
+
+            compute_time = self.session.total_model_compute_time_seconds
+            if (
+                isinstance(compute_time, int | float)
+                and compute_time > 0
+                and self.session.total_tokens > 0
+            ):
+                mlflow.log_metric(
+                    "model_compute_tokens_per_second",
+                    self.session.total_tokens / compute_time,
+                )
 
             mlflow.log_metric("total_cost", self.session.total_cost)
             mlflow.log_metric("total_input_tokens", self.session.total_input_tokens)
