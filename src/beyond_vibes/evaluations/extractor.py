@@ -77,8 +77,10 @@ def _extract_final_message(trace: dict[str, Any]) -> str:
         return ""
 
     last_turn = turns[-1]
-    raw_message = last_turn.get("raw_message", {})
-    content = raw_message.get("content", [])
+    # pi.dev format: content directly on turn; legacy OpenCode: nested under raw_message
+    content = last_turn.get("content") or last_turn.get("raw_message", {}).get(
+        "content", []
+    )
     content_parts = []
 
     for block in content:

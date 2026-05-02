@@ -21,12 +21,10 @@ class TestExtractFinalMessage:
         trace = {
             "turns": [
                 {
-                    "raw_message": {
-                        "content": [
-                            {"type": "text", "text": "Hello"},
-                            {"type": "thinking", "thinking": "Thinking..."},
-                        ]
-                    }
+                    "content": [
+                        {"type": "text", "text": "Hello"},
+                        {"type": "thinking", "thinking": "Thinking..."},
+                    ]
                 }
             ]
         }
@@ -42,6 +40,23 @@ class TestExtractFinalMessage:
     def test_no_messages_key(self) -> None:
         """Test missing messages key returns empty string."""
         assert _extract_final_message({}) == ""
+
+    def test_legacy_raw_message_format(self) -> None:
+        """Test backward compatibility with old OpenCode raw_message format."""
+        trace = {
+            "turns": [
+                {
+                    "raw_message": {
+                        "content": [
+                            {"type": "text", "text": "Legacy"},
+                        ]
+                    }
+                }
+            ]
+        }
+
+        result = _extract_final_message(trace)
+        assert result == "Legacy"
 
 
 class TestLoadArtifact:
@@ -109,7 +124,7 @@ class TestExtractRunData:
 
         mock_artifact.return_value = "system prompt"
         mock_trace.return_value = {
-            "turns": [{"raw_message": {"content": [{"type": "text", "text": "Done"}]}}],
+            "turns": [{"content": [{"type": "text", "text": "Done"}]}],
         }
 
         result = extract_run_data("run-123")
