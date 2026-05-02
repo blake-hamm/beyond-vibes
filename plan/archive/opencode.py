@@ -45,10 +45,10 @@ class OpenCodeClient:
         prompt: str,
         model_id: str | None = None,
         provider: str | None = None,
-        agent: str = "build",
+        agent: str = "orchestrator",
     ) -> None:
         """Send a prompt to an existing session asynchronously."""
-        provider_id = provider or "opencode"
+        provider_id = provider or "kimi-for-coding"
         message_id = f"msg_{session_id[:8]}"
 
         params = {"directory": self._working_dir} if self._working_dir else None

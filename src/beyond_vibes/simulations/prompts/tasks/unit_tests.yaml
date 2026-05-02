@@ -1,14 +1,23 @@
 name: "unit_tests"
 description: "Create unit test coverage"
 archetype: "repo_maintenance"
+guidelines:
+  test_coverage: "Tests must cover the main functionality of the module"
+  pytest_framework: "Tests should use pytest framework"
+  tests_location: "Test files should be in tests/ directory"
+  meaningful_assertions: "Tests should have meaningful assertions"
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
-agent: "build"
 max_turns: 50
+capture_git_diff: true
 system_prompt: |
-  You are running on NixOS. Never ask for human feedback or confirmation.
-  Just proceed with the best approach and explain what you did afterward.
+  You are running on NixOS inside a temporary sandbox.
+  You have a STRICT turn budget. Every assistant message counts as one turn. Complete the task in the fewest turns possible — ideally one.
+  NEVER ask questions, request clarification, summarize progress, or explain your reasoning in text.
+  Immediately use tools to complete the task. Call multiple tools in parallel whenever possible.
+  If a tool fails, retry with a fix immediately without explanation.
+  When the task is fully complete, output exactly the word "Done" and stop. Do not continue.
 prompt: |
   You are an expert QA Engineer. Ensure 80% or higher unit test coverage.
 
@@ -17,7 +26,11 @@ prompt: |
   - Use pytest in dev dependency group
   - Use shared fixtures in conftest.py
 
-  Steps:
-  1. Create unit tests
-  2. Check unit tests coverage
-  3. Once 80% or higher coverage is achieved, stop and report success
+  CRITICAL — Environment:
+  - You are in a temp sandbox. Do NOT modify system Python, the Nix store, or any parent project venv.
+  - If `poetry run` uses the wrong Python, create a local venv: `python3 -m venv .venv && .venv/bin/pip install pytest pytest-cov`
+  - Then run tests with: `PYTHONPATH=./src .venv/bin/python -m pytest --cov=lighthearted --cov-report=term-missing`
+  - Do NOT use `--break-system-packages`.
+
+  Execute all steps in the minimum number of turns. Do not check coverage in a separate turn unless the first run fails.
+  Once 80% or higher coverage is achieved, output "Done" and stop immediately. Do not report success in extra text.

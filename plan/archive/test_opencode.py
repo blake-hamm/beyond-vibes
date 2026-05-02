@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from beyond_vibes.simulations.opencode import OpenCodeClient
 
 
@@ -120,8 +119,8 @@ class TestSendPrompt:
         client.send_prompt(session_id="session-456", prompt="Hello")
 
         expected_call = client._client.post.call_args
-        assert expected_call[1]["json"]["model"]["providerID"] == "opencode"
-        assert expected_call[1]["json"]["agent"] == "build"
+        assert expected_call[1]["json"]["model"]["providerID"] == "kimi-for-coding"
+        assert expected_call[1]["json"]["agent"] == "orchestrator"
         assert expected_call[1]["json"]["model"]["modelID"] is None
 
     def test_send_prompt_without_working_dir(self) -> None:

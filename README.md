@@ -4,20 +4,19 @@
 
 This project provides a framework to evaluate models and compare them in latency and quality across real-world engineering tasks. Originally focused on benchmarking local model performance under constrained hardware, it now supports both local and API providers, allowing direct comparison between approaches.
 
-## Archetypes
-
-Our use cases naturally fall into four 'archetypes'. These represent the categories of tasks we leverage local models for, serving as the primary lenses for our qualitative evals.
-
-| Archetype | Description | Primary Goal | Examples |
-| :--- | :--- | :--- | :--- |
-| **Architectural Planning** | High-level design & research | Feasibility & Clarity | Auth plan, Protein folding architecture |
-| **Repo Maintenance** | Refactoring & chores | Stability & Cleanliness | Migrating to `uv`, adding unit tests |
-| **Feature Implementation** | New functionality code | Correctness & Integration | Implementing Lidarr/Readarr, nvim config |
-| **Comparative Research** | Vendor/Tool Analysis | Accuracy & Decision Support | LiteLLM vs Kong, Observability comparisons |
 
 ## Methodology
 
-We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define clear success criteria (e.g., a passing test suite, a verified architectural decision).
+We employ a scientific methodology to benchmark these archetypes. We target specific repositories and define clear success criteria (e.g., a passing test suite, a verified architectural decision). From a high level the process is:
+
+```mermaid
+flowchart LR
+    A[Manual Trigger] --> B[Download Models<br/>Input: repo_id, quant_tags<br/>Output: S3 bucket]
+    B --> C[Run Simulations<br/>Input: model configs, sim tasks<br/>Output: Custom MLflow traces]
+    C --> D[Process & Curate Dataset<br/>Input: MLflow traces<br/>Output: MLflow dataset]
+    D --> E[Evaluate with Judges<br/>Input: MLflow dataset<br/>Output: scores, metrics]
+    E --> F[Final Report/Dashboard<br/>Input: all metrics<br/>Output: comparison, insights]
+```
 
 ### Stratification (The "Local" Variables)
 
@@ -52,7 +51,18 @@ Unlike API-based benchmarks, local inference is highly sensitive to runtime conf
 
 ### Evals
 
-We leverage **DSPy** to compile LLM Judges that score outputs against quality rubrics.
+We leverage **DSPy** to compile LLM Judges that score outputs against quality rubrics. Additionally we used [built in judges from MLFlow](https://mlflow.org/docs/latest/genai/eval-monitor/scorers/llm-judge/predefined/).
+
+#### Archetypes
+
+Our use cases naturally fall into four 'archetypes'. These represent the categories of tasks we leverage local models for, serving as the primary lenses for our qualitative evals.
+
+| Archetype | Description | Primary Goal | Examples |
+| :--- | :--- | :--- | :--- |
+| **Architectural Planning** | High-level design & research | Feasibility & Clarity | Auth plan, Protein folding architecture |
+| **Repo Maintenance** | Refactoring & chores | Stability & Cleanliness | Migrating to `uv`, adding unit tests |
+| **Feature Implementation** | New functionality code | Correctness & Integration | Implementing Lidarr/Readarr, nvim config |
+| **Comparative Research** | Vendor/Tool Analysis | Accuracy & Decision Support | LiteLLM vs Kong, Observability comparisons |
 
 The evaluation framework has two tiers:
 
@@ -190,11 +200,11 @@ The download command automatically skips models without a `repo_id` (API models)
 
 ## CLI - Simulations
 
-Run simulations by cloning a repo and executing a prompt via OpenCode.
+Run simulations by cloning a repo and executing a prompt via pi.dev.
 
 ### Prerequisites
 
-- OpenCode server running (default: http://127.0.0.1:4096)
+- pi.dev installed (available via `nix develop`)
 - MLflow tracking server configured (optional, for logging)
 - Model defined in `models.yaml`
 
@@ -210,8 +220,8 @@ MLFLOW_TRACKING_URI=https://mlflow.example.com
 bucket: beyond-vibes
 models:
   - name: minimax-m2.5-free
-    repo_id: opencode/minimax-m2.5-free
-    quant_tags: []
+    provider: minimax
+    model_id: minimax-m2.5-free
 ```
 
 ### Run

@@ -1,14 +1,22 @@
 name: "poetry_to_uv"
 description: "Migrate a project from poetry to uv"
 archetype: "repo_maintenance"
+guidelines:
+  no_poetry_sections: "The pyproject.toml must not contain [tool.poetry] sections"
+  poetry_lock_removed: "The poetry.lock file must be removed"
+  uv_lock_present: "The uv.lock file must be present"
 repository:
   url: "https://github.com/blake-hamm/lighthearted"
   branch: "main"
-agent: "build"
-max_turns: 50
+max_turns: 40
+capture_git_diff: true
 system_prompt: |
-  You are running on NixOS. Never ask for human feedback or confirmation.
-  Just proceed with the best approach and explain what you did afterward.
+  You are running on NixOS inside a temporary sandbox.
+  You have a STRICT turn budget. Every assistant message counts as one turn. Complete the task in the fewest turns possible — ideally one.
+  NEVER ask questions, request clarification, summarize progress, or explain your reasoning in text.
+  Immediately use tools to complete the task. Call multiple tools in parallel whenever possible.
+  If a tool fails, retry with a fix immediately without explanation.
+  When the task is fully complete, output exactly the word "Done" and stop. Do not continue.
 prompt: |
   You are an expert DevOps engineer. Migrate this project from poetry to uv.
   The latest cookiecutter in the cruft project is now based on uv.
@@ -20,7 +28,10 @@ prompt: |
   - Ensure pyproject.toml is compatible with uv
   - Remove any poetry-specific configuration
 
-  Steps:
-  1. Update cruft
-  2. Troubleshoot and adjust pyproject.toml so it's functioning with uv
-  3. Run uv lock to generate lock file
+  CRITICAL — Environment:
+  - You are in a temp sandbox. Do NOT modify system Python, the Nix store, or any parent project venv.
+  - Do NOT use `--break-system-packages`.
+  - If `uv` or `python3` pick up the wrong environment, create a local venv inside the project.
+
+  Execute all steps in the minimum number of turns. Do not verify results in a separate turn.
+  When finished, output "Done" and stop.

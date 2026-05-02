@@ -1,9 +1,20 @@
 bucket: beyond-vibes
 models:
-  - name: kimi-k2.5
+  - name: kimi-for-coding
+    provider: kimi-coding
+    model_id: kimi-for-coding
+  - name: nemotron
     provider: opencode
-  - name: minimax-m2.5
-    provider: opencode-go
+    model_id: nemotron-3-super-free
+  - name: minimax
+    provider: opencode
+    model_id: minimax-m2.5-free
+  - name: qwen-36-a3b
+    provider: litellm
+    model_id: qwen-36-a3b
+  - name: fake
+    provider: litellm
+    model_id: a-fake-model
   - name: qwen3-0.6B
     provider: local
     repo_id: unsloth/Qwen3-0.6B-GGUF

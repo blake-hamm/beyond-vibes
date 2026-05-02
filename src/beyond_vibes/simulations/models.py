@@ -1,6 +1,6 @@
 """Configuration models for simulations."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RepositoryConfig(BaseModel):
@@ -18,6 +18,7 @@ class SimulationConfig(BaseModel):
     archetype: str
     repository: RepositoryConfig
     prompt: str
-    agent: str = "build"
     system_prompt: str | None = None
-    max_turns: int = 75
+    max_turns: int = 50
+    capture_git_diff: bool = False
+    guidelines: dict[str, str] = Field(default_factory=dict)

@@ -1,14 +1,10 @@
 """Simulation infrastructure for running agentic coding evaluations."""
 
-from beyond_vibes.simulations.mlflow import (
-    MessageData,
-    MlflowTracer,
-    SimulationSession,
-)
+from beyond_vibes.simulations.mlflow import MlflowTracer, SimulationSession
 from beyond_vibes.simulations.models import RepositoryConfig, SimulationConfig
+from beyond_vibes.simulations.pi_dev import TurnData
 
 SimulationLogger = MlflowTracer
-TurnData = MessageData
 
 __all__ = [
     "RepositoryConfig",
@@ -16,6 +12,5 @@ __all__ = [
     "MlflowTracer",
     "SimulationLogger",
     "SimulationSession",
-    "MessageData",
     "TurnData",
 ]

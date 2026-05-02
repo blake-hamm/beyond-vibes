@@ -565,7 +565,6 @@ def test_simulate_successful_execution(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -578,14 +577,12 @@ def test_simulate_successful_execution(
                         mock_sandbox = MagicMock()
                         mock_sandbox_class.return_value = mock_sandbox
 
-                        with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
-                        ) as mock_opencode_class:
-                            mock_opencode = MagicMock()
-                            mock_opencode_class.return_value.__enter__ = MagicMock(
-                                return_value=mock_opencode
+                        with patch("beyond_vibes.cli.PiDevClient") as mock_pi_dev_class:
+                            mock_pi_dev = MagicMock()
+                            mock_pi_dev_class.return_value.__enter__ = MagicMock(
+                                return_value=mock_pi_dev
                             )
-                            mock_opencode_class.return_value.__exit__ = MagicMock(
+                            mock_pi_dev_class.return_value.__exit__ = MagicMock(
                                 return_value=False
                             )
 
@@ -644,7 +641,6 @@ def test_simulate_error_occurred(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -657,14 +653,12 @@ def test_simulate_error_occurred(
                         mock_sandbox = MagicMock()
                         mock_sandbox_class.return_value = mock_sandbox
 
-                        with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
-                        ) as mock_opencode_class:
-                            mock_opencode = MagicMock()
-                            mock_opencode_class.return_value.__enter__ = MagicMock(
-                                return_value=mock_opencode
+                        with patch("beyond_vibes.cli.PiDevClient") as mock_pi_dev_class:
+                            mock_pi_dev = MagicMock()
+                            mock_pi_dev_class.return_value.__enter__ = MagicMock(
+                                return_value=mock_pi_dev
                             )
-                            mock_opencode_class.return_value.__exit__ = MagicMock(
+                            mock_pi_dev_class.return_value.__exit__ = MagicMock(
                                 return_value=False
                             )
 
@@ -676,7 +670,7 @@ def test_simulate_error_occurred(
 
                                 with patch(
                                     "beyond_vibes.cli.run_simulation",
-                                    return_value=True,
+                                    side_effect=RuntimeError("Simulation failed"),
                                 ):
                                     result = runner.invoke(
                                         app,
@@ -694,6 +688,7 @@ def test_simulate_error_occurred(
     assert result.exit_code == 1
     assert "Running simulation with model: test-model" in caplog.text
     assert "Sandbox cleaned up" in caplog.text
+    assert "Simulation failed" in caplog.text
     mock_sandbox.cleanup.assert_called_once()
 
 
@@ -728,7 +723,6 @@ def test_simulate_provider_filter(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -741,14 +735,12 @@ def test_simulate_provider_filter(
                         mock_sandbox = MagicMock()
                         mock_sandbox_class.return_value = mock_sandbox
 
-                        with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
-                        ) as mock_opencode_class:
-                            mock_opencode = MagicMock()
-                            mock_opencode_class.return_value.__enter__ = MagicMock(
-                                return_value=mock_opencode
+                        with patch("beyond_vibes.cli.PiDevClient") as mock_pi_dev_class:
+                            mock_pi_dev = MagicMock()
+                            mock_pi_dev_class.return_value.__enter__ = MagicMock(
+                                return_value=mock_pi_dev
                             )
-                            mock_opencode_class.return_value.__exit__ = MagicMock(
+                            mock_pi_dev_class.return_value.__exit__ = MagicMock(
                                 return_value=False
                             )
 
@@ -808,7 +800,6 @@ def test_simulate_custom_quant_tag(
     sim_config.repository = MagicMock()
     sim_config.repository.url = "https://github.com/test/repo"
     sim_config.repository.branch = "main"
-    sim_config.agent = "build"
     sim_config.max_turns = 75
     sim_config.prompt = "Test prompt"
     sim_config.system_prompt = None
@@ -821,14 +812,12 @@ def test_simulate_custom_quant_tag(
                         mock_sandbox = MagicMock()
                         mock_sandbox_class.return_value = mock_sandbox
 
-                        with patch(
-                            "beyond_vibes.cli.OpenCodeClient"
-                        ) as mock_opencode_class:
-                            mock_opencode = MagicMock()
-                            mock_opencode_class.return_value.__enter__ = MagicMock(
-                                return_value=mock_opencode
+                        with patch("beyond_vibes.cli.PiDevClient") as mock_pi_dev_class:
+                            mock_pi_dev = MagicMock()
+                            mock_pi_dev_class.return_value.__enter__ = MagicMock(
+                                return_value=mock_pi_dev
                             )
-                            mock_opencode_class.return_value.__exit__ = MagicMock(
+                            mock_pi_dev_class.return_value.__exit__ = MagicMock(
                                 return_value=False
                             )
 

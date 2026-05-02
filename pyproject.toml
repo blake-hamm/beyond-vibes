@@ -21,6 +21,8 @@ dependencies = [
     "httpx>=0.28.1",
     "boto3>=1.42.57",
     "psutil>=7.2.2",
+    "deepeval>=0.21.0",
+    "litellm>=1.0.0",
 ]
 
 [project.scripts]
@@ -38,6 +40,7 @@ dev = [
     "ipykernel>=6.0.0,<7.0.0",
     "notebook>=7.0.0,<8.0.0",
     "jupyter>=1.0.0,<2.0.0",
+    "typing-extensions>=4.15.0",
 ]
 
 [build-system]
@@ -70,3 +73,5 @@ branch = true
 fail_under = 80
 ignore_errors = true
 show_missing = true
+
+
